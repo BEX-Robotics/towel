@@ -1,0 +1,69 @@
+#pragma once
+#include "diffdoc.h"
+#include <QAbstractScrollArea>
+#include <QWidget>
+
+class QLabel;
+class QToolButton;
+
+// Paints a DiffDoc on a monospace grid: unified or split, wrapped or not.
+class DiffArea : public QAbstractScrollArea
+{
+    Q_OBJECT
+public:
+    explicit DiffArea(QWidget *parent = nullptr);
+    void setDoc(const DiffDoc *doc, bool loading);
+    void setSplit(bool s);
+    void setWrap(bool w);
+    bool split() const { return m_split; }
+    bool wrap() const { return m_wrap; }
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
+    void scrollContentsBy(int, int) override { viewport()->update(); }
+
+private:
+    struct Row {
+        int kind; // 0 hunk, 1 context, 2 change (split pair / unified add or del)
+        const DocLine *a = nullptr; // unified: the line; split: left (old)
+        const DocLine *b = nullptr; // split: right (new)
+        const QString *header = nullptr;
+    };
+    void rebuildRows();
+    void relayout();
+    int visualLines(const DocLine *l, int cols) const;
+    static std::vector<int> breaks(const QString &text, int cols); // start column of each visual line
+    void paintText(QPainter &p, const DocLine &l, int from, int to, qreal x, qreal top, const QColor &markBg) const;
+
+    const DiffDoc *m_doc = nullptr;
+    bool m_loading = false;
+    bool m_split = false, m_wrap = false;
+    std::vector<Row> m_rows;
+    std::vector<int> m_y; // top of each row, in pixels; m_y.back() = total height
+    QFont m_font, m_bold, m_italic;
+    qreal m_cw = 8;
+    int m_lh = 18;
+    int m_cols = 80;     // wrap columns (unified) or per side (split)
+};
+
+class DiffView : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit DiffView(QWidget *parent = nullptr);
+    void setDoc(const DiffDoc *doc, bool loading);
+    void setOptions(bool full, bool split, bool wrap);
+    bool full() const { return m_full; }
+
+signals:
+    void closeRequested();
+    void stepFile(int delta);
+    void optionsChanged(bool full, bool split, bool wrap);
+
+private:
+    DiffArea *m_area;
+    QLabel *m_status, *m_path, *m_stats;
+    QToolButton *m_hunks, *m_fullBtn, *m_unified, *m_splitBtn, *m_wrapBtn;
+    bool m_full = false;
+};

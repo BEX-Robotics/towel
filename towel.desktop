@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Towel
+GenericName=Git History Viewer
+Comment=Fast, good-looking git history viewer. Always know where your HEAD is.
+Exec=towel %f
+Icon=towel
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=git;history;diff;graph;
+StartupWMClass=towel
