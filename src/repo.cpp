@@ -125,7 +125,7 @@ void Repo::refresh()
 
 void Repo::checkChanged()
 {
-    if (m_path.isEmpty() || m_checking || m_loading || m_opRunning) return;
+    if (m_path.isEmpty() || m_checking || m_loading || m_opRunning || m_indexBusy || m_settling) return;
     m_checking = true;
     const QString root = m_path;
     QtConcurrent::run([root] { return gitload::fingerprint(root); }).then(this, [this, root](QString fp) {
@@ -196,7 +196,7 @@ void Repo::dismissOp()
     setOp(false, QString(), QString(), false);
 }
 
-void Repo::runGit(const QString &label, const QStringList &args)
+void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input)
 {
     if (m_opRunning || m_path.isEmpty()) return;
     m_opCanForce = false;
@@ -226,6 +226,8 @@ void Repo::runGit(const QString &label, const QStringList &args)
         setOp(false, label, QStringLiteral("Could not start git."), true);
     });
     p->start(QStringLiteral("git"), args);
+    if (!input.isEmpty()) p->write(input);
+    p->closeWriteChannel();
 }
 
 void Repo::pull()
@@ -323,4 +325,127 @@ void Repo::reword(const QString &id, const QString &message)
         emit opFinished(res.first);
         refresh();
     });
+}
+
+// ---------- commit panel ----------
+
+void Repo::loadStatus()
+{
+    if (m_path.isEmpty()) return;
+    const quint64 gen = ++m_statusGen;
+    const QString root = m_path;
+    QtConcurrent::run([root] { return gitload::workStatus(root); }).then(this, [this, gen](gitload::WorkStatus ws) {
+        if (gen != m_statusGen) return;
+        m_status = QVariantMap{{"unstaged", ws.unstaged}, {"staged", ws.staged}, {"conflicted", ws.conflicted}, {"error", ws.error}};
+        m_hasHead = ws.hasHead;
+        // our own index changes must not trigger a full history reload
+        if (m_settling && !m_indexBusy && !ws.fingerprint.isEmpty()) m_fingerprint = ws.fingerprint;
+        if (!m_indexBusy) m_settling = false;
+        emit statusChanged();
+    });
+}
+
+namespace {
+// Literal pathspecs, NUL-separated, for --pathspec-from-file=- --pathspec-file-nul
+QByteArray pathspecs(const QStringList &paths)
+{
+    QByteArray out;
+    for (const QString &p : paths) {
+        out += ":(literal)" + p.toUtf8();
+        out += '\0';
+    }
+    return out;
+}
+const QStringList kFromStdin{QStringLiteral("--pathspec-from-file=-"), QStringLiteral("--pathspec-file-nul")};
+} // namespace
+
+void Repo::indexOp(const QStringList &args, const QByteArray &input)
+{
+    m_indexQueue.append({args, input});
+    pumpIndexOps();
+}
+
+// Index operations run one at a time (git takes index.lock), then refresh only the status.
+void Repo::pumpIndexOps()
+{
+    if (m_indexBusy || m_indexQueue.isEmpty() || m_path.isEmpty()) return;
+    const auto [args, input] = m_indexQueue.takeFirst();
+    m_indexBusy = true;
+    auto *p = new QProcess(this);
+    p->setWorkingDirectory(m_path);
+    p->setProcessEnvironment(gitEnv());
+    p->setProcessChannelMode(QProcess::MergedChannels);
+    connect(p, &QProcess::finished, this, [this, p](int code, QProcess::ExitStatus st) {
+        const QString out = QString::fromUtf8(p->readAll()).trimmed();
+        p->deleteLater();
+        m_indexBusy = false;
+        if (st != QProcess::NormalExit || code != 0) {
+            m_indexQueue.clear();
+            emit indexOpFailed(out.isEmpty() ? QStringLiteral("git failed") : out);
+        }
+        if (m_indexQueue.isEmpty()) {
+            m_settling = true;
+            loadStatus();
+        }
+        pumpIndexOps();
+    });
+    p->start(QStringLiteral("git"), args);
+    if (!input.isEmpty()) p->write(input);
+    p->closeWriteChannel();
+}
+
+void Repo::stage(const QStringList &paths)
+{
+    if (paths.isEmpty()) return;
+    indexOp(QStringList{QStringLiteral("add"), QStringLiteral("-A")} + kFromStdin, pathspecs(paths));
+}
+
+void Repo::unstage(const QStringList &paths)
+{
+    if (paths.isEmpty()) return;
+    if (m_hasHead) indexOp(QStringList{QStringLiteral("restore"), QStringLiteral("--staged")} + kFromStdin, pathspecs(paths));
+    else indexOp(QStringList{QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-r"), QStringLiteral("-q")} + kFromStdin, pathspecs(paths));
+}
+
+void Repo::stageAll()
+{
+    indexOp({QStringLiteral("add"), QStringLiteral("-A")}, {});
+}
+
+void Repo::unstageAll()
+{
+    if (m_hasHead) indexOp({QStringLiteral("reset"), QStringLiteral("-q")}, {});
+    else indexOp({QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-r"), QStringLiteral("-q"), QStringLiteral(".")}, {});
+}
+
+void Repo::commit(const QString &message, bool amend)
+{
+    QStringList args{QStringLiteral("commit"), QStringLiteral("-F"), QStringLiteral("-")};
+    if (amend) args << QStringLiteral("--amend");
+    QByteArray msg = message.trimmed().toUtf8();
+    msg += '\n';
+    auto *once = new QObject(this);
+    connect(this, &Repo::opFinished, once, [this, once](bool ok) {
+        once->deleteLater();
+        if (ok) emit committed();
+    });
+    runGit(amend ? QStringLiteral("Amend") : QStringLiteral("Commit"), args, msg);
+}
+
+QString Repo::headId() const
+{
+    GRepo r;
+    if (!openRepo(r, m_path)) return {};
+    GRef head;
+    if (git_repository_head(head.out(), r) != 0 || !git_reference_target(head)) return {};
+    return oidStr(git_reference_target(head));
+}
+
+QString Repo::headMessage() const
+{
+    GRepo r;
+    if (!openRepo(r, m_path)) return {};
+    GObj c;
+    if (git_revparse_single(c.out(), r, "HEAD^{commit}") != 0) return {};
+    return u8(git_commit_message(reinterpret_cast<git_commit *>(c.get()))).trimmed();
 }

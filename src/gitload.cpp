@@ -177,7 +177,23 @@ const char *statusLetter(git_delta_t s)
 int makeDiff(git_diff **out, git_repository *r, const QString &id, git_diff_options *o)
 {
     int rc;
-    if (id == QLatin1String("WIP")) {
+    if (id == QLatin1String("WIP:staged") || id == QLatin1String("WIP:unstaged")) {
+        git_index *idx = nullptr;
+        if (git_repository_index(&idx, r) != 0) return -1;
+        if (id == QLatin1String("WIP:staged")) {
+            GTree headTree;
+            GRef head;
+            if (git_repository_head(head.out(), r) == 0) {
+                GObj t;
+                if (git_reference_peel(t.out(), head, GIT_OBJECT_TREE) == 0) headTree.p = reinterpret_cast<git_tree *>(t.release());
+            }
+            rc = git_diff_tree_to_index(out, r, headTree, idx, o);
+        } else {
+            o->flags |= GIT_DIFF_INCLUDE_UNTRACKED | GIT_DIFF_RECURSE_UNTRACKED_DIRS | GIT_DIFF_SHOW_UNTRACKED_CONTENT;
+            rc = git_diff_index_to_workdir(out, r, idx, o);
+        }
+        git_index_free(idx);
+    } else if (id == QLatin1String("WIP")) {
         GTree headTree;
         GRef head;
         if (git_repository_head(head.out(), r) == 0) {
@@ -600,7 +616,8 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
         }
     }
     if (idx == n) {
-        res.error = QStringLiteral("File not found in this change.");
+        res.error = path.endsWith(QLatin1Char('/')) ? QStringLiteral("Untracked folder. Stage it to see its files.")
+                                                    : QStringLiteral("File not found in this change.");
         return res;
     }
     const git_diff_delta *d = git_diff_get_delta(diff, idx);
@@ -613,7 +630,7 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
         const bool deleted = d->status == GIT_DELTA_DELETED;
         if (!added && !git_oid_is_zero(&d->old_file.id)) res.oldImage.loadFromData(imageBytes(root, "blob/" + oidStr(&d->old_file.id)));
         if (!deleted) {
-            if (id == QLatin1String("WIP"))
+            if (id.startsWith(QLatin1String("WIP")) && id != QLatin1String("WIP:staged"))
                 res.newImage.loadFromData(imageBytes(root, "file/" + QString::fromLatin1(QUrl::toPercentEncoding(path))));
             else if (!git_oid_is_zero(&d->new_file.id))
                 res.newImage.loadFromData(imageBytes(root, "blob/" + oidStr(&d->new_file.id)));
@@ -661,6 +678,62 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
         res.hunks.push_back(std::move(out));
     }
     return res;
+}
+
+WorkStatus workStatus(const QString &root)
+{
+    WorkStatus ws;
+    GRepo r;
+    if (!openRepo(r, root)) {
+        ws.error = gitErr();
+        return ws;
+    }
+    GRef head;
+    ws.hasHead = git_repository_head(head.out(), r) == 0;
+    git_status_options o;
+    git_status_options_init(&o, GIT_STATUS_OPTIONS_VERSION);
+    o.show = GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
+    o.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED | GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX | GIT_STATUS_OPT_EXCLUDE_SUBMODULES
+              | GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
+    GStatus st;
+    if (git_status_list_new(st.out(), r, &o) != 0) {
+        ws.error = gitErr();
+        return ws;
+    }
+    auto entry = [](const QString &path, const QString &oldPath, const char *status, bool untracked) {
+        const int slash = path.lastIndexOf(QLatin1Char('/'), path.endsWith(QLatin1Char('/')) ? -2 : -1);
+        return QVariantMap{{"path", path},
+                           {"oldPath", oldPath},
+                           {"dir", slash >= 0 ? path.left(slash + 1) : QString()},
+                           {"file", slash >= 0 ? path.mid(slash + 1) : path},
+                           {"status", QString::fromLatin1(status)},
+                           {"untracked", untracked}};
+    };
+    const size_t n = git_status_list_entrycount(st);
+    for (size_t i = 0; i < n; ++i) {
+        const git_status_entry *e = git_status_byindex(st, i);
+        const unsigned s = e->status;
+        if (s & GIT_STATUS_CONFLICTED) {
+            const git_diff_delta *d = e->index_to_workdir ? e->index_to_workdir : e->head_to_index;
+            if (d) ws.conflicted.append(entry(u8(d->new_file.path ? d->new_file.path : d->old_file.path), QString(), "C", false));
+            continue;
+        }
+        if (s & (GIT_STATUS_INDEX_NEW | GIT_STATUS_INDEX_MODIFIED | GIT_STATUS_INDEX_DELETED | GIT_STATUS_INDEX_RENAMED | GIT_STATUS_INDEX_TYPECHANGE)) {
+            const git_diff_delta *d = e->head_to_index;
+            const char *letter = (s & GIT_STATUS_INDEX_NEW) ? "A" : (s & GIT_STATUS_INDEX_DELETED) ? "D" : (s & GIT_STATUS_INDEX_RENAMED) ? "R"
+                               : (s & GIT_STATUS_INDEX_TYPECHANGE) ? "T" : "M";
+            const QString path = u8(d->new_file.path ? d->new_file.path : d->old_file.path);
+            ws.staged.append(entry(path, (s & GIT_STATUS_INDEX_RENAMED) ? u8(d->old_file.path) : QString(), letter, false));
+        }
+        if (s & (GIT_STATUS_WT_NEW | GIT_STATUS_WT_MODIFIED | GIT_STATUS_WT_DELETED | GIT_STATUS_WT_TYPECHANGE | GIT_STATUS_WT_RENAMED)) {
+            const git_diff_delta *d = e->index_to_workdir;
+            const bool untracked = s & GIT_STATUS_WT_NEW;
+            const char *letter = untracked ? "A" : (s & GIT_STATUS_WT_DELETED) ? "D" : (s & GIT_STATUS_WT_TYPECHANGE) ? "T" : "M";
+            ws.unstaged.append(entry(u8(d->new_file.path ? d->new_file.path : d->old_file.path), QString(), letter, untracked));
+        }
+    }
+    ws.fingerprint = fingerprintOf(r);
+    return ws;
 }
 
 QByteArray imageBytes(const QString &root, const QString &spec)

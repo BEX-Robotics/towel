@@ -55,6 +55,18 @@ public:
     int rewordState(const QString &id);
     void reword(const QString &id, const QString &message);
 
+    // commit panel
+    QVariantMap status() const { return m_status; }
+    void loadStatus();
+    void stage(const QStringList &paths);
+    void unstage(const QStringList &paths);
+    void stageAll();
+    void unstageAll();
+    void commit(const QString &message, bool amend);
+    QString headId() const;
+    QString headMessage() const;
+    bool indexBusy() const { return m_indexBusy; }
+
 signals:
     void loadedChanged();
     void loadingChanged();
@@ -64,10 +76,15 @@ signals:
     void diffChanged();
     void opChanged();
     void opFinished(bool ok);
+    void statusChanged();
+    void indexOpFailed(const QString &message);
+    void committed();
 
 private:
     explicit Repo(QObject *parent = nullptr);
-    void runGit(const QString &label, const QStringList &args);
+    void runGit(const QString &label, const QStringList &args, const QByteArray &input = {});
+    void indexOp(const QStringList &args, const QByteArray &input);
+    void pumpIndexOps();
     void setOp(bool running, const QString &label, const QString &out, bool failed);
 
     CommitModel m_commits;
@@ -82,6 +99,12 @@ private:
     bool m_diffLoading = false;
     quint64 m_loadGen = 0, m_detailsGen = 0, m_diffGen = 0;
     bool m_checking = false;
+    QVariantMap m_status;
+    bool m_hasHead = true;
+    quint64 m_statusGen = 0;
+    bool m_indexBusy = false;
+    bool m_settling = false; // index op done, waiting for the status reload
+    QList<QPair<QStringList, QByteArray>> m_indexQueue;
 
     bool m_opRunning = false, m_opFailed = false, m_opCanForce = false;
     QString m_opLabel, m_opOutput;
