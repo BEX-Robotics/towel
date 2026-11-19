@@ -24,6 +24,7 @@ qt_add_executable(towel
   src/diffdoc.h src/diffdoc.cpp
   src/diffview.h src/diffview.cpp
   src/panels.h src/panels.cpp
+  src/commitpanel.h src/commitpanel.cpp
   src/avatars.h src/avatars.cpp
   src/mainwindow.h src/mainwindow.cpp
 )

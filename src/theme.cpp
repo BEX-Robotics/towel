@@ -64,6 +64,8 @@ QPushButton[chip="true"] { background: #272b33; }
 QPushButton[chip="true"]:hover { background: #30353f; }
 QPushButton[primary="true"] { background: #2f7cc4; color: white; }
 QPushButton[primary="true"]:hover { background: #3a8fdc; }
+QPushButton[primary="true"]:disabled { background: #263241; color: #5c6370; }
+QCheckBox { spacing: 8px; }
 QLineEdit, QPlainTextEdit {
   background: #272b33; border: 1px solid #2b2f37; border-radius: 6px; padding: 4px 8px;
   selection-background-color: #28374b; color: #d8dce3;

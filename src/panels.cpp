@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTimer>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 namespace {
@@ -272,6 +273,18 @@ void FileList::setOpenPath(const QString &p)
     update();
 }
 
+void FileList::setAction(const QString &glyph, const QString &tip)
+{
+    m_action = glyph;
+    m_actionTip = tip;
+    update();
+}
+
+QRect FileList::actionRect(int row) const
+{
+    return QRect(width() - 38, row * kFileRowH + 3, 24, kFileRowH - 6);
+}
+
 QSize FileList::sizeHint() const { return QSize(200, int(m_files.size()) * kFileRowH + 20); }
 
 void FileList::paintEvent(QPaintEvent *ev)
@@ -299,8 +312,17 @@ void FileList::paintEvent(QPaintEvent *ev)
         p.setFont(badgeF);
         p.drawText(badge, Qt::AlignCenter, st);
 
-        // stats on the right
-        int sx = w - 16;
+        // stats on the right (leaving room for the action button)
+        int sx = w - 16 - (m_action.isEmpty() ? 0 : 30);
+        if (!m_action.isEmpty() && i == m_hover) {
+            const QRect ar = actionRect(i);
+            p.setPen(Qt::NoPen);
+            p.setBrush(theme::field);
+            p.drawRoundedRect(ar, 5, 5);
+            p.setPen(m_action == QLatin1String("+") ? theme::green : theme::red);
+            p.setFont(theme::uiFont(15, true));
+            p.drawText(ar, Qt::AlignCenter, m_action);
+        }
         p.setFont(mono);
         auto stat = [&](const QString &t, const QColor &c) {
             const int tw = QFontMetrics(mono).horizontalAdvance(t);
@@ -335,7 +357,28 @@ void FileList::paintEvent(QPaintEvent *ev)
 void FileList::mousePressEvent(QMouseEvent *e)
 {
     const int i = int(e->position().y()) / kFileRowH;
-    if (i >= 0 && i < m_files.size()) emit fileClicked(m_files[i].toMap());
+    if (i < 0 || i >= m_files.size()) return;
+    if (!m_action.isEmpty() && actionRect(i).contains(e->position().toPoint())) emit actionClicked(m_files[i].toMap());
+    else emit fileClicked(m_files[i].toMap());
+}
+
+void FileList::mouseDoubleClickEvent(QMouseEvent *e)
+{
+    const int i = int(e->position().y()) / kFileRowH;
+    if (!m_action.isEmpty() && i >= 0 && i < m_files.size() && !actionRect(i).contains(e->position().toPoint()))
+        emit actionClicked(m_files[i].toMap());
+}
+
+bool FileList::event(QEvent *e)
+{
+    if (e->type() == QEvent::ToolTip && !m_action.isEmpty()) {
+        auto *he = static_cast<QHelpEvent *>(e);
+        const int i = he->pos().y() / kFileRowH;
+        if (i >= 0 && i < m_files.size() && actionRect(i).contains(he->pos())) QToolTip::showText(he->globalPos(), m_actionTip, this);
+        else QToolTip::hideText();
+        return true;
+    }
+    return QWidget::event(e);
 }
 
 void FileList::mouseMoveEvent(QMouseEvent *e)

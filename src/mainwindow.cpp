@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "commitmodel.h"
+#include "commitpanel.h"
 #include "commitview.h"
 #include "diffview.h"
 #include "panels.h"
@@ -150,11 +151,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     m_center->addWidget(m_diff);
     m_center->addWidget(m_empty);
     m_center->setCurrentWidget(m_empty);
-    m_details = new DetailsPanel(m_split);
-    m_details->setMinimumWidth(260);
+    m_right = new QStackedWidget(m_split);
+    m_right->setMinimumWidth(260);
+    m_details = new DetailsPanel(m_right);
+    m_commitPanel = new CommitPanel(m_right);
+    m_right->addWidget(m_details);
+    m_right->addWidget(m_commitPanel);
     m_split->addWidget(m_sidebar);
     m_split->addWidget(m_center);
-    m_split->addWidget(m_details);
+    m_split->addWidget(m_right);
     m_split->setStretchFactor(1, 1);
     m_split->setSizes({230, 900, 420});
     v->addWidget(m_split, 1);
@@ -208,7 +213,29 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
         if (id.isEmpty() || id == m_selectedId) return;
         m_selectedId = id;
         if (!m_openFile.isEmpty()) closeDiff();
-        detailsTimer->start();
+        if (id == QLatin1String("WIP")) {
+            m_right->setCurrentWidget(m_commitPanel);
+            m_repo->loadStatus();
+        } else {
+            m_right->setCurrentWidget(m_details);
+            detailsTimer->start();
+        }
+    });
+
+    // commit panel
+    connect(m_repo, &Repo::statusChanged, this, &MainWindow::onStatus);
+    connect(m_commitPanel, &CommitPanel::openFile, this, [this](const QVariantMap &f, const QString &mode) { showFile(f, mode); });
+    connect(m_commitPanel, &CommitPanel::stage, m_repo, &Repo::stage);
+    connect(m_commitPanel, &CommitPanel::unstage, m_repo, &Repo::unstage);
+    connect(m_commitPanel, &CommitPanel::stageAll, m_repo, &Repo::stageAll);
+    connect(m_commitPanel, &CommitPanel::unstageAll, m_repo, &Repo::unstageAll);
+    connect(m_commitPanel, &CommitPanel::commit, this, [this](const QString &msg, bool amend) {
+        closeDiff();
+        m_repo->commit(msg, amend);
+    });
+    connect(m_repo, &Repo::committed, m_commitPanel, &CommitPanel::clearMessage);
+    connect(m_commitPanel, &CommitPanel::amendToggled, this, [this](bool on) {
+        if (on) m_commitPanel->setAmendInfo(m_repo->headMessage(), m_repo->rewordState(m_repo->headId()) == 2);
     });
     connect(m_sidebar->list(), &SideList::jumpTo, this, [this](const QString &id) {
         const int i = m_repo->commits()->indexOf(id);
@@ -218,7 +245,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
             m_commits->setFocus();
         }
     });
-    connect(m_details, &DetailsPanel::openFile, this, &MainWindow::showFile);
+    connect(m_details, &DetailsPanel::openFile, this, [this](const QVariantMap &f) { showFile(f); });
     connect(m_details, &DetailsPanel::jumpTo, this, [this](const QString &id) {
         const int i = m_repo->commits()->indexOf(id);
         if (i >= 0) {
@@ -238,7 +265,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
         s.setValue("diffFull", full);
         s.setValue("diffSplit", split);
         s.setValue("diffWrap", wrap);
-        if (reload && !m_openFile.isEmpty()) showFile(m_openFile);
+        if (reload && !m_openFile.isEmpty()) showFile(m_openFile, m_openMode);
     });
     connect(m_repo->commits(), &CommitModel::searchFinished, this, [this] {
         const auto &hits = m_repo->commits()->hits();
@@ -267,6 +294,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
         else if (m_search->hasFocus()) m_search->clear();
     });
     sc(QKeySequence(QStringLiteral("Alt+Down")), [this] { stepFile(1); });
+    sc(QKeySequence(QStringLiteral("Ctrl+Return")), [this] {
+        if (m_right->currentWidget() == m_commitPanel) m_commitPanel->triggerCommit();
+    });
     sc(QKeySequence(QStringLiteral("Alt+Up")), [this] { stepFile(-1); });
 
     // re-check the repo while the window is active (commits from a terminal etc.)
@@ -430,25 +460,54 @@ void MainWindow::onLoaded()
     if (i < 0) i = 0;
     m_selectedId = m_repo->commits()->idAt(i);
     m_commits->setCurrent(i);
-    m_repo->loadDetails(m_selectedId);
+    m_commitPanel->setRepoKey(m_repo->path());
+    m_commitPanel->setBranch(m_repo->detached() ? QString() : m_repo->head());
+    const bool wip = m_selectedId == QLatin1String("WIP");
+    m_right->setCurrentWidget(wip ? static_cast<QWidget *>(m_commitPanel) : m_details);
+    if (wip) m_repo->loadStatus();
+    else m_repo->loadDetails(m_selectedId);
     if (!m_search->text().trimmed().isEmpty()) m_repo->commits()->search(m_search->text());
-    if (!m_openFile.isEmpty()) m_repo->loadDiff(m_selectedId, m_openFile.value("path").toString(), m_openFile.value("oldPath").toString(), m_full);
+    if (!m_openFile.isEmpty() && m_openMode.isEmpty())
+        m_repo->loadDiff(m_selectedId, m_openFile.value("path").toString(), m_openFile.value("oldPath").toString(), m_full);
     if (m_center->currentWidget() == m_commits) m_commits->setFocus();
 }
 
-void MainWindow::showFile(const QVariantMap &f)
+void MainWindow::showFile(const QVariantMap &f, const QString &mode)
 {
     m_openFile = f;
-    m_details->setOpenPath(f.value("path").toString());
+    m_openMode = mode;
+    if (mode.isEmpty()) m_details->setOpenPath(f.value("path").toString());
+    else m_commitPanel->setOpenFile(mode, f.value("path").toString());
+    m_diff->setModeLabel(mode == QLatin1String("staged") ? QStringLiteral("Staged") : mode == QLatin1String("unstaged") ? QStringLiteral("Unstaged") : QString());
     m_center->setCurrentWidget(m_diff);
-    m_repo->loadDiff(m_selectedId, f.value("path").toString(), f.value("oldPath").toString(), m_full);
+    const QString id = mode.isEmpty() ? m_selectedId : QStringLiteral("WIP:") + mode;
+    m_repo->loadDiff(id, f.value("path").toString(), f.value("oldPath").toString(), m_full);
+}
+
+// Status reloaded (after staging, committing, or selecting WIP): update the
+// panel and keep the open diff sensible.
+void MainWindow::onStatus()
+{
+    m_commitPanel->setStatus(m_repo->status());
+    if (m_openMode.isEmpty() || m_openFile.isEmpty()) return;
+    const QVariantList files = m_commitPanel->files(m_openMode);
+    const QString path = m_openFile.value("path").toString();
+    for (const QVariant &v : files)
+        if (v.toMap().value("path").toString() == path) return showFile(v.toMap(), m_openMode); // still there: reload its diff
+    // the file left this list: move on to the next one in the same list
+    if (files.isEmpty()) return closeDiff();
+    int next = 0;
+    while (next < files.size() && files[next].toMap().value("path").toString() < path) ++next;
+    showFile(files[std::min(next, int(files.size()) - 1)].toMap(), m_openMode);
 }
 
 void MainWindow::closeDiff()
 {
     if (m_openFile.isEmpty()) return;
     m_openFile.clear();
+    m_openMode.clear();
     m_details->setOpenPath(QString());
+    m_commitPanel->setOpenFile(QString(), QString());
     m_repo->clearDiff();
     m_center->setCurrentWidget(m_commits);
     m_commits->setFocus();
@@ -456,13 +515,13 @@ void MainWindow::closeDiff()
 
 void MainWindow::stepFile(int delta)
 {
-    const QVariantList files = m_repo->details().value("files").toList();
+    const QVariantList files = m_openMode.isEmpty() ? m_repo->details().value("files").toList() : m_commitPanel->files(m_openMode);
     if (m_openFile.isEmpty() || files.isEmpty()) return;
     int i = 0;
     for (int k = 0; k < files.size(); ++k)
         if (files[k].toMap().value("path") == m_openFile.value("path")) i = k;
     i = std::clamp(i + delta, 0, int(files.size()) - 1);
-    showFile(files[i].toMap());
+    showFile(files[i].toMap(), m_openMode);
 }
 
 void MainWindow::openDialog()
@@ -539,6 +598,23 @@ void MainWindow::editMessage()
 
 void MainWindow::runDemo()
 {
+    // TOWEL_DEMO_SCRIPT="stage:a.txt;open:staged:a.txt;commit:message" runs steps 900 ms apart
+    const QStringList steps = qEnvironmentVariable("TOWEL_DEMO_SCRIPT").split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    for (int k = 0; k < steps.size(); ++k) {
+        QTimer::singleShot(1500 + 900 * k, this, [this, step = steps[k]] {
+            const QString arg = step.section(QLatin1Char(':'), 1);
+            if (step.startsWith(QLatin1String("stage:"))) m_repo->stage({arg});
+            else if (step.startsWith(QLatin1String("unstage:"))) m_repo->unstage({arg});
+            else if (step == QLatin1String("stageall")) m_repo->stageAll();
+            else if (step == QLatin1String("unstageall")) m_repo->unstageAll();
+            else if (step.startsWith(QLatin1String("commit:"))) m_repo->commit(arg, false);
+            else if (step.startsWith(QLatin1String("open:"))) {
+                const QString mode = arg.section(QLatin1Char(':'), 0, 0), path = arg.section(QLatin1Char(':'), 1);
+                for (const QVariant &v : m_commitPanel->files(mode))
+                    if (v.toMap().value("path").toString() == path) showFile(v.toMap(), mode);
+            }
+        });
+    }
     const QString row = qEnvironmentVariable("TOWEL_DEMO_ROW");
     const QString file = qEnvironmentVariable("TOWEL_DEMO_FILE");
     const QString search = qEnvironmentVariable("TOWEL_DEMO_SEARCH");

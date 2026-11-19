@@ -82,20 +82,27 @@ public:
     explicit FileList(QWidget *parent = nullptr);
     void setFiles(const QVariantList &files);
     void setOpenPath(const QString &p);
+    // "+" or "−": shows a per-row stage/unstage button on hover
+    void setAction(const QString &glyph, const QString &tip);
+    const QVariantList &files() const { return m_files; }
     QSize sizeHint() const override;
 
 signals:
     void fileClicked(const QVariantMap &file);
+    void actionClicked(const QVariantMap &file);
 
 protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
+    void mouseDoubleClickEvent(QMouseEvent *) override;
+    bool event(QEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
 
 private:
+    QRect actionRect(int row) const;
     QVariantList m_files;
-    QString m_open;
+    QString m_open, m_action, m_actionTip;
     int m_hover = -1;
 };
 

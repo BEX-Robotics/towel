@@ -13,6 +13,7 @@ class DiffView;
 class DetailsPanel;
 class Sidebar;
 class Repo;
+class CommitPanel;
 
 class MainWindow : public QMainWindow
 {
@@ -30,7 +31,8 @@ private:
     QWidget *buildStatusStrip();
     void onLoaded();
     void onSelected(int row);
-    void showFile(const QVariantMap &f);
+    void showFile(const QVariantMap &f, const QString &mode = QString());
+    void onStatus();
     void closeDiff();
     void stepFile(int delta);
     void openDialog();
@@ -43,6 +45,8 @@ private:
     CommitView *m_commits;
     DiffView *m_diff;
     DetailsPanel *m_details;
+    CommitPanel *m_commitPanel;
+    QStackedWidget *m_right;
     Sidebar *m_sidebar;
     QSplitter *m_split;
     QStackedWidget *m_center;
@@ -60,6 +64,7 @@ private:
 
     QString m_selectedId;
     QVariantMap m_openFile;
+    QString m_openMode; // "" (commit file), "unstaged" or "staged"
     bool m_jumpOnHits = false;
     int m_hitPos = -1;
     bool m_full = false, m_splitDiff = false, m_wrap = false;

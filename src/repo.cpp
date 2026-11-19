@@ -381,7 +381,8 @@ void Repo::pumpIndexOps()
         m_indexBusy = false;
         if (st != QProcess::NormalExit || code != 0) {
             m_indexQueue.clear();
-            emit indexOpFailed(out.isEmpty() ? QStringLiteral("git failed") : out);
+            setOp(false, QStringLiteral("Staging"), out.isEmpty() ? QStringLiteral("git failed") : out, true);
+            emit indexOpFailed(out);
         }
         if (m_indexQueue.isEmpty()) {
             m_settling = true;

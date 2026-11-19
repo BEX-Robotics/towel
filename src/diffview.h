@@ -55,6 +55,7 @@ public:
     void setDoc(const DiffDoc *doc, bool loading);
     void setOptions(bool full, bool split, bool wrap);
     bool full() const { return m_full; }
+    void setModeLabel(const QString &mode); // "Staged" / "Unstaged" / ""
 
 signals:
     void closeRequested();
@@ -63,7 +64,7 @@ signals:
 
 private:
     DiffArea *m_area;
-    QLabel *m_status, *m_path, *m_stats;
+    QLabel *m_status, *m_path, *m_stats, *m_mode;
     QToolButton *m_hunks, *m_fullBtn, *m_unified, *m_splitBtn, *m_wrapBtn;
     bool m_full = false;
 };

@@ -310,6 +310,10 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent)
     auto *back = mk(QStringLiteral("←"), QStringLiteral("Back to graph (Esc)"), false);
     connect(back, &QToolButton::clicked, this, &DiffView::closeRequested);
     hl->addWidget(back);
+    m_mode = new QLabel(bar);
+    m_mode->setStyleSheet(QStringLiteral("background:#272b33; color:#8d94a1; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:bold;"));
+    m_mode->hide();
+    hl->addWidget(m_mode);
     m_status = new QLabel(bar);
     m_status->setFixedSize(20, 20);
     m_status->setAlignment(Qt::AlignCenter);
@@ -400,4 +404,10 @@ void DiffView::setDoc(const DiffDoc *doc, bool loading)
     m_stats->setText(loading ? QString()
                              : QStringLiteral("<span style='color:#4cc26b'>+%1</span>&nbsp;&nbsp;<span style='color:#e5534b'>−%2</span>")
                                    .arg(doc->additions).arg(doc->deletions));
+}
+
+void DiffView::setModeLabel(const QString &mode)
+{
+    m_mode->setText(mode.toUpper());
+    m_mode->setVisible(!mode.isEmpty());
 }
