@@ -621,6 +621,8 @@ void MainWindow::runDemo()
             else if (step == QLatin1String("stageall")) m_repo->stageAll();
             else if (step == QLatin1String("unstageall")) m_repo->unstageAll();
             else if (step.startsWith(QLatin1String("commit:"))) m_repo->commit(arg, false);
+            else if (step.startsWith(QLatin1String("rows:"))) // rows:4-9 selects diff rows (header rows count)
+                m_diff->area()->selectRows(arg.section(QLatin1Char('-'), 0, 0).toInt(), arg.section(QLatin1Char('-'), 1).toInt());
             else if (step.startsWith(QLatin1String("key:"))) // e.g. key:jjs: keystrokes into the diff
                 for (QChar c : arg) {
                     QKeyEvent ev(QEvent::KeyPress, Qt::Key_A + (c.toUpper().unicode() - 'A'), Qt::NoModifier, c);

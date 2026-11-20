@@ -22,6 +22,7 @@ public:
     void setStaging(int mode);
     // the next setDoc calls are a reload of the same file: keep scroll and hunk
     void keepPlace() { m_keepPlace = true; }
+    void selectRows(int from, int to); // dev aid / tests: like a gutter drag
 
 signals:
     // changed lines of one hunk to stage/unstage: old line numbers of '-', new of '+'
@@ -31,8 +32,10 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void resizeEvent(QResizeEvent *) override;
     void keyPressEvent(QKeyEvent *) override;
+    bool event(QEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     void scrollContentsBy(int, int) override { viewport()->update(); }
 
@@ -54,6 +57,9 @@ private:
     int rowAtY(int y) const;
     QRect buttonRect(int unit) const;
     void setCurrent(int unit, bool scroll);
+    QRect chipRect() const; // "Stage N lines" for the line selection
+    void emitSelection();
+    void selectTo(int row);
     void applyCurrent();
     void relayout();
     int visualLines(const DocLine *l, int cols) const;
@@ -72,6 +78,11 @@ private:
     std::vector<Unit> m_units;
     int m_staging = 0, m_current = -1, m_hoverUnit = -1;
     bool m_keepPlace = false;
+    // line selection (unified view): rows of changed lines
+    QSet<int> m_sel;
+    int m_selAnchor = -1;
+    bool m_dragging = false, m_dragAdd = true, m_hoverChip = false;
+    QSet<int> m_selBase; // selection before the current drag
 };
 
 class DiffView : public QWidget

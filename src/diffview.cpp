@@ -38,6 +38,9 @@ void DiffArea::setDoc(const DiffDoc *doc, bool loading)
 {
     m_doc = doc;
     m_hoverUnit = -1;
+    m_sel.clear();
+    m_selAnchor = -1;
+    m_dragging = false;
     if (m_keepPlace) {
         // reload after staging: keep showing the old content until the new one
         // arrives, then stay at the same scroll offset and hunk index
@@ -142,8 +145,65 @@ void DiffArea::setCurrent(int u, bool scroll)
     viewport()->update();
 }
 
+QRect DiffArea::chipRect() const
+{
+    if (m_sel.isEmpty() || !m_staging || m_split) return {};
+    int last = -1;
+    for (int r : m_sel) last = std::max(last, r);
+    const QString t = (m_staging == 1 ? QStringLiteral("Stage %1 %2") : QStringLiteral("Unstage %1 %2"))
+                          .arg(m_sel.size()).arg(m_sel.size() == 1 ? QStringLiteral("line") : QStringLiteral("lines"));
+    const int w = QFontMetrics(theme::uiFont(11, true)).horizontalAdvance(t) + 24, h = 22;
+    const int vh = viewport()->height();
+    const int y = std::clamp(m_y[last + 1] - verticalScrollBar()->value() + 4, 4, vh - h - 4);
+    return QRect(viewport()->width() - w - 12, y, w, h);
+}
+
+void DiffArea::emitSelection()
+{
+    QSet<int> del, add;
+    for (int r : m_sel) {
+        const DocLine *l = m_rows[r].a;
+        if (l->t == '-') del.insert(l->o);
+        else if (l->t == '+') add.insert(l->n);
+    }
+    emit applyHunk(del, add);
+}
+
+// drag / shift-click: anchor..row, added to (or removed from) the selection before the drag
+void DiffArea::selectTo(int row)
+{
+    if (m_selAnchor < 0 || row < 0) return;
+    m_sel = m_selBase;
+    for (int r = std::min(row, m_selAnchor); r <= std::max(row, m_selAnchor); ++r) {
+        if (m_rows[r].kind != 2) continue;
+        if (m_dragAdd) m_sel.insert(r);
+        else m_sel.remove(r);
+    }
+    viewport()->update();
+}
+
+void DiffArea::selectRows(int from, int to)
+{
+    if (from < 0 || to >= int(m_rows.size())) return;
+    m_selBase.clear();
+    m_dragAdd = true;
+    m_selAnchor = from;
+    selectTo(to);
+}
+
+bool DiffArea::event(QEvent *e)
+{
+    // Esc clears the line selection before the window's "close diff" shortcut sees it
+    if (e->type() == QEvent::ShortcutOverride && !m_sel.isEmpty() && static_cast<QKeyEvent *>(e)->key() == Qt::Key_Escape) {
+        e->accept();
+        return true;
+    }
+    return QAbstractScrollArea::event(e);
+}
+
 void DiffArea::applyCurrent()
 {
+    if (!m_sel.isEmpty() && !m_split) return emitSelection();
     if (!m_staging || m_current < 0 || m_current >= int(m_units.size())) return;
     const Unit &u = m_units[m_current];
     emit applyHunk(u.del, u.add);
@@ -166,6 +226,14 @@ void DiffArea::keyPressEvent(QKeyEvent *e)
     case Qt::Key_U:
         if (m_staging == 2) applyCurrent();
         return;
+    case Qt::Key_Escape:
+        if (!m_sel.isEmpty()) {
+            m_sel.clear();
+            viewport()->update();
+            return;
+        }
+        e->ignore();
+        return;
     default:
         QAbstractScrollArea::keyPressEvent(e);
     }
@@ -174,24 +242,66 @@ void DiffArea::keyPressEvent(QKeyEvent *e)
 void DiffArea::mousePressEvent(QMouseEvent *e)
 {
     const QPoint pos = e->position().toPoint();
-    const int u = unitAtRow(rowAtY(pos.y()));
+    if (e->button() == Qt::LeftButton && chipRect().contains(pos)) return emitSelection();
+    const int row = rowAtY(pos.y());
+    const int u = unitAtRow(row);
     if (u >= 0 && buttonRect(u).contains(pos)) {
         setCurrent(u, false);
+        m_sel.clear();
         return applyCurrent();
     }
     if (u >= 0) setCurrent(u, false);
+    // line selection: press in the gutter of the unified view
+    const bool inGutter = m_staging && !m_split && pos.x() < 2 * kNumW + 20;
+    if (e->button() == Qt::LeftButton && inGutter && row >= 0 && m_rows[row].kind == 2) {
+        const bool shift = e->modifiers() & Qt::ShiftModifier, ctrl = e->modifiers() & Qt::ControlModifier;
+        if (shift && m_selAnchor >= 0) {
+            m_selBase = m_sel;
+            m_dragAdd = true;
+        } else {
+            m_selBase = ctrl ? m_sel : QSet<int>{};
+            m_dragAdd = !(ctrl && m_sel.contains(row));
+            m_selAnchor = row;
+        }
+        m_dragging = true;
+        selectTo(row);
+        return;
+    }
+    if (e->button() == Qt::LeftButton && !m_sel.isEmpty()) {
+        m_sel.clear();
+        viewport()->update();
+    }
     QAbstractScrollArea::mousePressEvent(e);
+}
+
+void DiffArea::mouseReleaseEvent(QMouseEvent *e)
+{
+    m_dragging = false;
+    QAbstractScrollArea::mouseReleaseEvent(e);
 }
 
 void DiffArea::mouseMoveEvent(QMouseEvent *e)
 {
     const QPoint pos = e->position().toPoint();
+    if (m_dragging) {
+        // autoscroll near the edges
+        const int vh = viewport()->height();
+        if (pos.y() < 0) verticalScrollBar()->setValue(verticalScrollBar()->value() - m_lh);
+        else if (pos.y() > vh) verticalScrollBar()->setValue(verticalScrollBar()->value() + m_lh);
+        const int row = rowAtY(std::clamp(pos.y(), 0, vh - 1));
+        if (row >= 0) selectTo(row);
+        return;
+    }
     const int u = m_staging ? unitAtRow(rowAtY(pos.y())) : -1;
-    if (u != m_hoverUnit) {
+    const bool chip = chipRect().contains(pos);
+    if (u != m_hoverUnit || chip != m_hoverChip) {
         m_hoverUnit = u;
+        m_hoverChip = chip;
         viewport()->update();
     }
-    viewport()->setCursor(u >= 0 && buttonRect(u).contains(pos) ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    const bool gutter = m_staging && !m_split && pos.x() < 2 * kNumW + 20;
+    viewport()->setCursor(chip || (u >= 0 && buttonRect(u).contains(pos)) ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    viewport()->setToolTip(gutter ? QStringLiteral("Click or drag to select lines · Ctrl toggles · Shift extends") : QString());
     QAbstractScrollArea::mouseMoveEvent(e);
 }
 
@@ -206,6 +316,7 @@ void DiffArea::setSplit(bool s)
 {
     if (m_split == s) return;
     m_split = s;
+    m_sel.clear();
     rebuildRows();
 }
 
@@ -448,6 +559,15 @@ void DiffArea::paintEvent(QPaintEvent *)
         }
     }
 
+    // selected lines: tinted gutter with an accent edge
+    if (!m_split)
+        for (int r : m_sel) {
+            const int top = m_y[r] - sv, h = m_y[r + 1] - m_y[r];
+            if (top + h < 0 || top > vh) continue;
+            p.fillRect(0, top, 2 * kNumW + 18, h, QColor(theme::accent.red(), theme::accent.green(), theme::accent.blue(), 70));
+            p.fillRect(2 * kNumW + 16, top, 2, h, theme::accent);
+        }
+
     // current hunk marker and the stage/unstage button
     if (m_current >= 0 && m_current < int(m_units.size()) && (m_staging || m_units.size() > 1)) {
         const Unit &u = m_units[m_current];
@@ -466,6 +586,17 @@ void DiffArea::paintEvent(QPaintEvent *)
         p.setPen(hot ? QColor(0x12, 0x14, 0x18) : c);
         p.drawText(br, Qt::AlignCenter, m_staging == 1 ? QStringLiteral("Stage hunk") : QStringLiteral("Unstage hunk"));
         p.setRenderHint(QPainter::Antialiasing, false);
+    }
+    if (const QRect cr = chipRect(); !cr.isNull()) {
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);
+        p.setBrush(m_hoverChip ? theme::accent.lighter(115) : theme::accent);
+        p.drawRoundedRect(QRectF(cr), cr.height() / 2.0, cr.height() / 2.0);
+        p.setFont(theme::uiFont(11, true));
+        p.setPen(QColor(0x0e, 0x12, 0x18));
+        p.drawText(cr, Qt::AlignCenter,
+                   (m_staging == 1 ? QStringLiteral("Stage %1 %2") : QStringLiteral("Unstage %1 %2"))
+                       .arg(m_sel.size()).arg(m_sel.size() == 1 ? QStringLiteral("line") : QStringLiteral("lines")));
     }
 }
 
