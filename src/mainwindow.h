@@ -41,6 +41,15 @@ private:
     void editMessage();
     void updateBranchChip();
     void updateUndo();
+    void commitMenu(int row, const QPoint &pos);
+    void refMenu(const QVariantMap &entry, const QPoint &pos);
+    void checkout(const QVariantMap &entry);
+    void createBranch(const QString &at);
+    void deleteBranch(const QString &name);
+    void stashChanges();
+    // run a git command; on failure whose output matches `retryIf`, ask and run `retry`
+    void gitThen(const QString &label, const QStringList &args, const QString &retryIf = {}, const QString &question = {},
+                 const QStringList &retry = {});
 
     Repo *m_repo;
     CommitView *m_commits;

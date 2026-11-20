@@ -35,6 +35,7 @@ signals:
     void unstageAll();
     void commit(const QString &message, bool amend);
     void amendToggled(bool on);
+    void stashRequested();
 
 private:
     void updateButton();
@@ -42,7 +43,7 @@ private:
 
     FileList *m_unstaged, *m_staged;
     QLabel *m_unstagedHead, *m_stagedHead, *m_conflicts, *m_counter, *m_amendWarn;
-    QPushButton *m_stageAll, *m_unstageAll, *m_commit;
+    QPushButton *m_stageAll, *m_unstageAll, *m_commit, *m_stash;
     QLineEdit *m_summary;
     QPlainTextEdit *m_body;
     QCheckBox *m_amend;

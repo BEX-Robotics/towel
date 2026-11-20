@@ -1,4 +1,5 @@
 #include "panels.h"
+#include <QContextMenuEvent>
 #include "avatars.h"
 #include "theme.h"
 
@@ -107,6 +108,7 @@ void SideList::rebuild()
             e.current = m.value("current").toBool();
             e.ahead = m.value("ahead").toInt();
             e.behind = m.value("behind").toInt();
+            e.index = m.value("index").toInt();
             shown.push_back(e);
         }
         if (total == 0) return;
@@ -203,8 +205,29 @@ void SideList::paintEvent(QPaintEvent *)
     }
 }
 
+QVariantMap SideList::Entry::map() const
+{
+    return {{"kind", kind}, {"name", name}, {"id", id}, {"index", index}, {"current", current}};
+}
+
+void SideList::contextMenuEvent(QContextMenuEvent *ev)
+{
+    const int i = rowAt(ev->pos().y());
+    if (i < 0 || m_entries[i].header) return;
+    emit jumpTo(m_entries[i].id);
+    emit menuRequested(m_entries[i].map(), ev->globalPos());
+}
+
+void SideList::mouseDoubleClickEvent(QMouseEvent *ev)
+{
+    const int i = rowAt(int(ev->position().y()));
+    if (i < 0 || m_entries[i].header || ev->button() != Qt::LeftButton) return;
+    emit activated(m_entries[i].map());
+}
+
 void SideList::mousePressEvent(QMouseEvent *ev)
 {
+    if (ev->button() != Qt::LeftButton) return;
     const int i = rowAt(int(ev->position().y()));
     if (i < 0) return;
     const Entry &e = m_entries[i];

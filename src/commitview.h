@@ -17,11 +17,13 @@ public:
 
 signals:
     void currentChanged(int row);
+    void menuRequested(int row, const QPoint &globalPos);
 
 protected:
     void paintEvent(QPaintEvent *) override;
     void resizeEvent(QResizeEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
+    void contextMenuEvent(QContextMenuEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     void keyPressEvent(QKeyEvent *) override;

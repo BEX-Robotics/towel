@@ -36,11 +36,16 @@ public:
 
 signals:
     void jumpTo(const QString &id);
+    // entry: {kind: local|remote|tag|stash, name, id, index, current}
+    void menuRequested(const QVariantMap &entry, const QPoint &globalPos);
+    void activated(const QVariantMap &entry); // double-click
 
 protected:
     void paintEvent(QPaintEvent *) override;
     void resizeEvent(QResizeEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
+    void mouseDoubleClickEvent(QMouseEvent *) override;
+    void contextMenuEvent(QContextMenuEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     void scrollContentsBy(int, int) override { viewport()->update(); }
@@ -49,8 +54,9 @@ private:
     struct Entry {
         bool header = false;
         QString key, label, name, id, kind;
-        int count = 0, ahead = 0, behind = 0;
+        int count = 0, ahead = 0, behind = 0, index = 0;
         bool current = false;
+        QVariantMap map() const;
     };
     void rebuild();
     int rowAt(int y) const;

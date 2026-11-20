@@ -114,8 +114,14 @@ CommitPanel::CommitPanel(QWidget *parent) : QWidget(parent)
     m_commit->setProperty("primary", true);
     m_commit->setCursor(Qt::PointingHandCursor);
     m_commit->setToolTip(QStringLiteral("Ctrl+Enter"));
+    m_stash = new QPushButton(QStringLiteral("Stash"), editor);
+    m_stash->setToolTip(QStringLiteral("Stash all changes, including untracked files"));
+    m_stash->setCursor(Qt::PointingHandCursor);
+    m_stash->setFocusPolicy(Qt::NoFocus);
+    connect(m_stash, &QPushButton::clicked, this, &CommitPanel::stashRequested);
     btnRow->addWidget(m_amend);
     btnRow->addStretch();
+    btnRow->addWidget(m_stash);
     btnRow->addWidget(m_commit);
     ev->addLayout(btnRow);
     v->addWidget(editor);
@@ -156,6 +162,7 @@ void CommitPanel::setStatus(const QVariantMap &status)
     m_stagedHead->setText(QStringLiteral("Staged  %1").arg(m_stagedFiles.size()));
     m_stageAll->setEnabled(!m_unstagedFiles.isEmpty());
     m_unstageAll->setEnabled(!m_stagedFiles.isEmpty());
+    m_stash->setEnabled(!m_stagedFiles.isEmpty() || !m_unstagedFiles.isEmpty());
     const QVariantList conflicted = status.value("conflicted").toList();
     QStringList names;
     for (const QVariant &c : conflicted) names << c.toMap().value("path").toString();

@@ -54,6 +54,8 @@ public:
     void push(bool force = false);
     void fetch();
     void dismissOp();
+    // any other git command, shown in the status strip; refreshes afterwards
+    void run(const QString &label, const QStringList &args) { runGit(label, args); }
     // 0 = not rewordable, 1 = rewordable (local only), 2 = rewordable but already pushed
     int rewordState(const QString &id);
     void reword(const QString &id, const QString &message);

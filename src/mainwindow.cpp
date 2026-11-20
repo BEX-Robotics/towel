@@ -16,7 +16,10 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QInputDialog>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPlainTextEdit>
@@ -197,6 +200,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     connect(m_repo, &Repo::diffChanged, this, [this] { m_diff->setDoc(&m_repo->diff(), m_repo->diffLoading()); });
     connect(m_repo, &Repo::diffLoadingChanged, this, [this] { m_diff->setDoc(&m_repo->diff(), m_repo->diffLoading()); });
     connect(m_repo, &Repo::opChanged, this, &MainWindow::updateOp);
+    connect(m_commits, &CommitView::menuRequested, this, &MainWindow::commitMenu);
+    connect(m_commitPanel, &CommitPanel::stashRequested, this, &MainWindow::stashChanges);
+    connect(m_sidebar->list(), &SideList::menuRequested, this, &MainWindow::refMenu);
+    connect(m_sidebar->list(), &SideList::activated, this, [this](const QVariantMap &e) {
+        const QString k = e.value("kind").toString();
+        if (k == QLatin1String("local") || k == QLatin1String("remote")) checkout(e);
+    });
     connect(m_repo, &Repo::undoChanged, this, &MainWindow::updateUndo);
     updateUndo();
     connect(m_repo, &Repo::restoreMessage, this, [this](const QString &msg) { m_commitPanel->setAmendInfo(msg, false); });
@@ -523,6 +533,149 @@ void MainWindow::onStatus()
     showFile(files[std::min(next, int(files.size()) - 1)].toMap(), m_openMode);
 }
 
+// ---------- branches, tags, stashes ----------
+
+void MainWindow::gitThen(const QString &label, const QStringList &args, const QString &retryIf, const QString &question,
+                         const QStringList &retry)
+{
+    if (m_repo->opRunning()) return;
+    if (!retryIf.isEmpty()) {
+        auto *once = new QObject(this);
+        connect(m_repo, &Repo::opFinished, once, [=, this](bool ok) {
+            once->deleteLater();
+            if (ok || !m_repo->opOutput().contains(retryIf)) return;
+            if (QMessageBox::question(this, label, question) == QMessageBox::Yes) m_repo->run(label, retry);
+        });
+    }
+    m_repo->run(label, args);
+}
+
+void MainWindow::checkout(const QVariantMap &e)
+{
+    const QString kind = e.value("kind").toString(), name = e.value("name").toString();
+    if (kind == QLatin1String("local")) {
+        if (!e.value("current").toBool()) gitThen(QStringLiteral("Checkout ") + name, {QStringLiteral("switch"), name});
+        return;
+    }
+    if (kind == QLatin1String("remote")) {
+        // origin/feature: switch to the local "feature", creating it to track the remote if needed
+        const QString local = name.section(QLatin1Char('/'), 1);
+        for (const QVariant &v : m_repo->branches()) {
+            const QVariantMap b = v.toMap();
+            if (b.value("kind") == QLatin1String("local") && b.value("name") == local)
+                return gitThen(QStringLiteral("Checkout ") + local, {QStringLiteral("switch"), local});
+        }
+        return gitThen(QStringLiteral("Checkout ") + local, {QStringLiteral("switch"), QStringLiteral("-c"), local, QStringLiteral("--track"), name});
+    }
+    // a commit or tag: detached HEAD
+    gitThen(QStringLiteral("Checkout ") + e.value("id").toString().left(8),
+            {QStringLiteral("switch"), QStringLiteral("--detach"), e.value("id").toString()});
+}
+
+void MainWindow::createBranch(const QString &at)
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("New branch"), QStringLiteral("Branch name (created at %1, then checked out):").arg(at.left(8)),
+                                               QLineEdit::Normal, QString(), &ok).trimmed();
+    if (!ok || name.isEmpty()) return;
+    gitThen(QStringLiteral("Create branch ") + name, {QStringLiteral("switch"), QStringLiteral("-c"), name, at});
+}
+
+void MainWindow::deleteBranch(const QString &name)
+{
+    if (QMessageBox::question(this, QStringLiteral("Delete branch"), QStringLiteral("Delete the local branch \"%1\"?").arg(name)) != QMessageBox::Yes)
+        return;
+    gitThen(QStringLiteral("Delete branch ") + name, {QStringLiteral("branch"), QStringLiteral("-d"), name}, QStringLiteral("not fully merged"),
+            QStringLiteral("\"%1\" has commits that are not merged anywhere. Delete it anyway? (git reflog keeps them for a while.)").arg(name),
+            {QStringLiteral("branch"), QStringLiteral("-D"), name});
+}
+
+void MainWindow::stashChanges()
+{
+    bool ok = false;
+    const QString msg = QInputDialog::getText(this, QStringLiteral("Stash changes"), QStringLiteral("Stash all changes, including untracked files. Message (optional):"),
+                                              QLineEdit::Normal, QString(), &ok).trimmed();
+    if (!ok) return;
+    QStringList args{QStringLiteral("stash"), QStringLiteral("push"), QStringLiteral("--include-untracked")};
+    if (!msg.isEmpty()) args << QStringLiteral("-m") << msg;
+    gitThen(QStringLiteral("Stash"), args);
+}
+
+void MainWindow::commitMenu(int row, const QPoint &pos)
+{
+    const QString id = m_repo->commits()->idAt(row);
+    if (id.isEmpty()) return;
+    QMenu menu(this);
+    if (id == QLatin1String("WIP")) {
+        menu.addAction(QStringLiteral("Stash all changes…"), this, &MainWindow::stashChanges);
+        menu.exec(pos);
+        return;
+    }
+    // branches pointing here
+    QList<QVariantMap> here;
+    for (const QVariant &v : m_repo->branches())
+        if (v.toMap().value("id") == id) here << v.toMap();
+    for (const QVariantMap &b : here) {
+        if (b.value("current").toBool()) continue;
+        menu.addAction(QStringLiteral("Checkout %1").arg(b.value("name").toString()), this, [this, b] { checkout(b); });
+    }
+    menu.addAction(QStringLiteral("Checkout this commit (detached)"), this, [this, id] { checkout({{"kind", "commit"}, {"id", id}}); });
+    menu.addSeparator();
+    menu.addAction(QStringLiteral("New branch here…"), this, [this, id] { createBranch(id); });
+    menu.addAction(QStringLiteral("New tag here…"), this, [this, id] {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, QStringLiteral("New tag"), QStringLiteral("Tag name:"), QLineEdit::Normal, QString(), &ok).trimmed();
+        if (ok && !name.isEmpty()) gitThen(QStringLiteral("Create tag ") + name, {QStringLiteral("tag"), name, id});
+    });
+    if (m_repo->rewordState(id)) {
+        menu.addSeparator();
+        menu.addAction(QStringLiteral("Edit message…"), this, &MainWindow::editMessage);
+    }
+    menu.addSeparator();
+    menu.addAction(QStringLiteral("Copy SHA"), this, [this, id] { m_repo->copy(id); });
+    menu.exec(pos);
+}
+
+void MainWindow::refMenu(const QVariantMap &e, const QPoint &pos)
+{
+    const QString kind = e.value("kind").toString(), name = e.value("name").toString(), id = e.value("id").toString();
+    QMenu menu(this);
+    if (kind == QLatin1String("local") || kind == QLatin1String("remote")) {
+        if (!e.value("current").toBool()) menu.addAction(QStringLiteral("Checkout"), this, [this, e] { checkout(e); });
+        menu.addAction(QStringLiteral("New branch from here…"), this, [this, id] { createBranch(id); });
+        if (kind == QLatin1String("local")) {
+            menu.addAction(QStringLiteral("Rename…"), this, [this, name] {
+                bool ok = false;
+                const QString to = QInputDialog::getText(this, QStringLiteral("Rename branch"), QStringLiteral("New name:"), QLineEdit::Normal, name, &ok).trimmed();
+                if (ok && !to.isEmpty() && to != name) gitThen(QStringLiteral("Rename branch"), {QStringLiteral("branch"), QStringLiteral("-m"), name, to});
+            });
+            if (!e.value("current").toBool()) {
+                menu.addSeparator();
+                menu.addAction(QStringLiteral("Delete…"), this, [this, name] { deleteBranch(name); });
+            }
+        }
+    } else if (kind == QLatin1String("tag")) {
+        menu.addAction(QStringLiteral("Checkout (detached)"), this, [this, id] { checkout({{"kind", "commit"}, {"id", id}}); });
+        menu.addAction(QStringLiteral("Delete tag…"), this, [this, name] {
+            if (QMessageBox::question(this, QStringLiteral("Delete tag"), QStringLiteral("Delete the local tag \"%1\"?").arg(name)) == QMessageBox::Yes)
+                gitThen(QStringLiteral("Delete tag ") + name, {QStringLiteral("tag"), QStringLiteral("-d"), name});
+        });
+    } else if (kind == QLatin1String("stash")) {
+        const QString ref = QStringLiteral("stash@{%1}").arg(e.value("index").toInt());
+        menu.addAction(QStringLiteral("Pop (apply and drop)"), this, [this, ref] { gitThen(QStringLiteral("Pop stash"), {QStringLiteral("stash"), QStringLiteral("pop"), ref}); });
+        menu.addAction(QStringLiteral("Apply (keep stash)"), this, [this, ref] { gitThen(QStringLiteral("Apply stash"), {QStringLiteral("stash"), QStringLiteral("apply"), ref}); });
+        menu.addSeparator();
+        menu.addAction(QStringLiteral("Drop…"), this, [this, ref, name] {
+            if (QMessageBox::question(this, QStringLiteral("Drop stash"), QStringLiteral("Drop \"%1\"? Its changes are lost.").arg(name)) == QMessageBox::Yes)
+                gitThen(QStringLiteral("Drop stash"), {QStringLiteral("stash"), QStringLiteral("drop"), ref});
+        });
+    }
+    menu.addSeparator();
+    menu.addAction(kind == QLatin1String("stash") ? QStringLiteral("Copy SHA") : QStringLiteral("Copy name"), this,
+                   [this, kind, name, id] { m_repo->copy(kind == QLatin1String("stash") ? id : name); });
+    menu.exec(pos);
+}
+
 void MainWindow::updateUndo()
 {
     const QString u = m_repo->undoLabel(), r = m_repo->redoLabel();
@@ -637,6 +790,8 @@ void MainWindow::runDemo()
             else if (step.startsWith(QLatin1String("unstage:"))) m_repo->unstage({arg});
             else if (step == QLatin1String("stageall")) m_repo->stageAll();
             else if (step == QLatin1String("undo")) m_repo->undo();
+            else if (step.startsWith(QLatin1String("checkout:"))) // checkout:remote:origin/x
+                checkout({{"kind", arg.section(QLatin1Char(':'), 0, 0)}, {"name", arg.section(QLatin1Char(':'), 1)}});
             else if (step == QLatin1String("redo")) m_repo->redo();
             else if (step.startsWith(QLatin1String("amend:"))) m_repo->commit(arg, true);
             else if (step == QLatin1String("unstageall")) m_repo->unstageAll();

@@ -1,4 +1,5 @@
 #include "commitview.h"
+#include <QContextMenuEvent>
 #include "avatars.h"
 #include "commitmodel.h"
 #include "theme.h"
@@ -285,6 +286,14 @@ void CommitView::mousePressEvent(QMouseEvent *e)
     if (e->button() != Qt::LeftButton) return;
     const int r = rowAt(int(e->position().y()));
     if (r >= 0) setCurrent(r, false);
+}
+
+void CommitView::contextMenuEvent(QContextMenuEvent *e)
+{
+    const int r = rowAt(e->pos().y());
+    if (r < 0) return;
+    setCurrent(r, false);
+    emit menuRequested(r, e->globalPos());
 }
 
 void CommitView::mouseMoveEvent(QMouseEvent *e)
