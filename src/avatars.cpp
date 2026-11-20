@@ -171,11 +171,11 @@ void AvatarCache::paint(QPainter *p, const QRectF &r, const QString &email, cons
         QString initials;
         for (const QString &part : name.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
             initials += part.at(0).toUpper();
-            if (initials.size() == 2) break;
+            if (initials.size() == 1) break; // one big letter reads better at graph size
         }
         if (initials.isEmpty() && !email.isEmpty()) initials = email.at(0).toUpper();
         QFont f = p->font();
-        f.setPixelSize(int(inner.height() * 0.42));
+        f.setPixelSize(std::max(7, int(inner.height() * 0.58)));
         f.setBold(true);
         p->setFont(f);
         p->setPen(light ? QColor(0x12, 0x14, 0x18) : QColor(255, 255, 255));
