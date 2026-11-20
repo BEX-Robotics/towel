@@ -536,7 +536,7 @@ void MainWindow::onStatus()
 // ---------- branches, tags, stashes ----------
 
 void MainWindow::gitThen(const QString &label, const QStringList &args, const QString &retryIf, const QString &question,
-                         const QStringList &retry)
+                         const QStringList &retry, const QString &undoLabel, const QString &undoMode)
 {
     if (m_repo->opRunning()) return;
     if (!retryIf.isEmpty()) {
@@ -547,7 +547,7 @@ void MainWindow::gitThen(const QString &label, const QStringList &args, const QS
             if (QMessageBox::question(this, label, question) == QMessageBox::Yes) m_repo->run(label, retry);
         });
     }
-    m_repo->run(label, args);
+    m_repo->run(label, args, undoLabel, undoMode);
 }
 
 void MainWindow::checkout(const QVariantMap &e)
@@ -607,6 +607,14 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
     if (id.isEmpty()) return;
     QMenu menu(this);
     if (id == QLatin1String("WIP")) {
+        if (const QString seq = m_repo->sequencerState(); !seq.isEmpty()) {
+            if (seq == QLatin1String("cherry-pick") || seq == QLatin1String("revert"))
+                menu.addAction(QStringLiteral("Continue %1 (after staging the resolved files)").arg(seq), this, [this, seq] {
+                    gitThen(QStringLiteral("Continue ") + seq, {seq, QStringLiteral("--continue")});
+                });
+            menu.addAction(QStringLiteral("Abort %1").arg(seq), this, [this, seq] { gitThen(QStringLiteral("Abort ") + seq, {seq, QStringLiteral("--abort")}); });
+            menu.addSeparator();
+        }
         menu.addAction(QStringLiteral("Stash all changes…"), this, &MainWindow::stashChanges);
         menu.exec(pos);
         return;
@@ -627,6 +635,33 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
         const QString name = QInputDialog::getText(this, QStringLiteral("New tag"), QStringLiteral("Tag name:"), QLineEdit::Normal, QString(), &ok).trimmed();
         if (ok && !name.isEmpty()) gitThen(QStringLiteral("Create tag ") + name, {QStringLiteral("tag"), name, id});
     });
+    menu.addSeparator();
+    const QString shortId = id.left(8);
+    const bool onHead = m_repo->commits()->indexOf(id) >= 0 && id == m_repo->headId();
+    if (!onHead) {
+        menu.addAction(QStringLiteral("Cherry-pick onto current branch"), this, [this, id, shortId] {
+            gitThen(QStringLiteral("Cherry-pick ") + shortId, {QStringLiteral("cherry-pick"), id}, {}, {}, {}, QStringLiteral("cherry-pick"));
+        });
+    }
+    menu.addAction(QStringLiteral("Revert (new commit that undoes it)"), this, [this, id, shortId] {
+        gitThen(QStringLiteral("Revert ") + shortId, {QStringLiteral("revert"), QStringLiteral("--no-edit"), id}, {}, {}, {}, QStringLiteral("revert"));
+    });
+    if (!onHead && !m_repo->branch().isEmpty()) {
+        QMenu *reset = menu.addMenu(QStringLiteral("Reset %1 to here").arg(m_repo->branch()));
+        reset->addAction(QStringLiteral("Soft: keep all changes staged"), this, [this, id] {
+            gitThen(QStringLiteral("Reset (soft)"), {QStringLiteral("reset"), QStringLiteral("--soft"), id}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--soft"));
+        });
+        reset->addAction(QStringLiteral("Mixed: keep changes, unstaged"), this, [this, id] {
+            gitThen(QStringLiteral("Reset (mixed)"), {QStringLiteral("reset"), QStringLiteral("--mixed"), id}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--mixed"));
+        });
+        reset->addAction(QStringLiteral("Hard: discard all changes…"), this, [this, id] {
+            if (QMessageBox::warning(this, QStringLiteral("Hard reset"),
+                                     QStringLiteral("Reset %1 to %2 and DISCARD all uncommitted changes? Uncommitted work cannot be recovered.")
+                                         .arg(m_repo->branch(), id.left(8)),
+                                     QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) == QMessageBox::Yes)
+                gitThen(QStringLiteral("Reset (hard)"), {QStringLiteral("reset"), QStringLiteral("--hard"), id}, {}, {}, {}, QStringLiteral("reset"));
+        });
+    }
     if (m_repo->rewordState(id)) {
         menu.addSeparator();
         menu.addAction(QStringLiteral("Edit message…"), this, &MainWindow::editMessage);
@@ -790,6 +825,10 @@ void MainWindow::runDemo()
             else if (step.startsWith(QLatin1String("unstage:"))) m_repo->unstage({arg});
             else if (step == QLatin1String("stageall")) m_repo->stageAll();
             else if (step == QLatin1String("undo")) m_repo->undo();
+            else if (step.startsWith(QLatin1String("pick:")))
+                gitThen(QStringLiteral("Cherry-pick"), {QStringLiteral("cherry-pick"), arg}, {}, {}, {}, QStringLiteral("cherry-pick"));
+            else if (step.startsWith(QLatin1String("mixed:")))
+                gitThen(QStringLiteral("Reset (mixed)"), {QStringLiteral("reset"), QStringLiteral("--mixed"), arg}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--mixed"));
             else if (step.startsWith(QLatin1String("checkout:"))) // checkout:remote:origin/x
                 checkout({{"kind", arg.section(QLatin1Char(':'), 0, 0)}, {"name", arg.section(QLatin1Char(':'), 1)}});
             else if (step == QLatin1String("redo")) m_repo->redo();

@@ -55,7 +55,14 @@ public:
     void fetch();
     void dismissOp();
     // any other git command, shown in the status strip; refreshes afterwards
-    void run(const QString &label, const QStringList &args) { runGit(label, args); }
+    // undoLabel: record in the undo journal (undo resets back with --keep)
+    // undoMode: how undo moves back: "--keep" (drops the commits' changes), "--soft", "--mixed"
+    void run(const QString &label, const QStringList &args, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep"))
+    {
+        if (!undoLabel.isEmpty()) journalBegin(undoLabel, undoMode);
+        runGit(label, args);
+    }
+    QString sequencerState() const; // "cherry-pick", "revert", "merge", "rebase" or ""
     // 0 = not rewordable, 1 = rewordable (local only), 2 = rewordable but already pushed
     int rewordState(const QString &id);
     void reword(const QString &id, const QString &message);
@@ -71,6 +78,7 @@ public:
     void applyLines(const QStringList &paths, bool staged, const QSet<int> &selDel, const QSet<int> &selAdd);
     void commit(const QString &message, bool amend);
     QString headId() const;
+    QString branch() const { return m_branch; } // "" when detached
     QString headMessage() const;
     bool indexBusy() const { return m_indexBusy; }
 
@@ -111,9 +119,9 @@ private:
     void setOp(bool running, const QString &label, const QString &out, bool failed);
     struct UndoEntry {
         QString label, ref, before, after, message;
-        bool keepWorktree = false; // reset --keep (pull) instead of --soft
+        QString mode = QStringLiteral("--soft"); // how to reset back / forward
     };
-    void journalBegin(const QString &label, bool keepWorktree);
+    void journalBegin(const QString &label, const QString &mode);
     void journalEnd(bool ok);
     void moveRef(const UndoEntry &e, bool back);
     QPair<QString, QString> headRef() const; // ref name ("HEAD" when detached), oid

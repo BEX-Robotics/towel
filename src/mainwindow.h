@@ -49,7 +49,7 @@ private:
     void stashChanges();
     // run a git command; on failure whose output matches `retryIf`, ask and run `retry`
     void gitThen(const QString &label, const QStringList &args, const QString &retryIf = {}, const QString &question = {},
-                 const QStringList &retry = {});
+                 const QStringList &retry = {}, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep"));
 
     Repo *m_repo;
     CommitView *m_commits;

@@ -238,7 +238,7 @@ void Repo::runGit(const QString &label, const QStringList &args, const QByteArra
 
 void Repo::pull()
 {
-    journalBegin(QStringLiteral("pull"), true);
+    journalBegin(QStringLiteral("pull"), QStringLiteral("--keep"));
     runGit(QStringLiteral("Pull (rebase)"), {QStringLiteral("pull"), QStringLiteral("--rebase"), QStringLiteral("--autostash")});
 }
 
@@ -282,7 +282,7 @@ void Repo::reword(const QString &id, const QString &message)
     QString msg = message.trimmed();
     if (msg.isEmpty()) return;
     msg += QLatin1Char('\n');
-    journalBegin(QStringLiteral("message edit"), false);
+    journalBegin(QStringLiteral("message edit"), QStringLiteral("--keep"));
     setOp(true, QStringLiteral("Edit commit message"), QString(), false);
 
     QtConcurrent::run([root, id, msg]() -> QPair<bool, QString> {
@@ -482,12 +482,29 @@ void Repo::commit(const QString &message, bool amend)
         once->deleteLater();
         if (ok) emit committed();
     });
-    journalBegin(amend ? QStringLiteral("amend") : QStringLiteral("commit"), false);
+    journalBegin(amend ? QStringLiteral("amend") : QStringLiteral("commit"), QStringLiteral("--soft"));
     if (m_pending && !amend) m_pending->message = message.trimmed();
     runGit(amend ? QStringLiteral("Amend") : QStringLiteral("Commit"), args, msg);
 }
 
 // ---------- undo journal ----------
+
+QString Repo::sequencerState() const
+{
+    GRepo r;
+    if (!openRepo(r, m_path)) return {};
+    switch (git_repository_state(r)) {
+    case GIT_REPOSITORY_STATE_CHERRYPICK:
+    case GIT_REPOSITORY_STATE_CHERRYPICK_SEQUENCE: return QStringLiteral("cherry-pick");
+    case GIT_REPOSITORY_STATE_REVERT:
+    case GIT_REPOSITORY_STATE_REVERT_SEQUENCE: return QStringLiteral("revert");
+    case GIT_REPOSITORY_STATE_MERGE: return QStringLiteral("merge");
+    case GIT_REPOSITORY_STATE_REBASE:
+    case GIT_REPOSITORY_STATE_REBASE_INTERACTIVE:
+    case GIT_REPOSITORY_STATE_REBASE_MERGE: return QStringLiteral("rebase");
+    default: return {};
+    }
+}
 
 QPair<QString, QString> Repo::headRef() const
 {
@@ -499,13 +516,13 @@ QPair<QString, QString> Repo::headRef() const
     return {detached ? QStringLiteral("HEAD") : u8(git_reference_name(head)), oidStr(git_reference_target(head))};
 }
 
-void Repo::journalBegin(const QString &label, bool keepWorktree)
+void Repo::journalBegin(const QString &label, const QString &mode)
 {
     m_pending.reset();
     if (m_opRunning) return;
     const auto [ref, oid] = headRef();
     if (oid.isEmpty()) return; // unborn: the first commit is not undoable
-    m_pending = UndoEntry{label, ref, oid, {}, {}, keepWorktree};
+    m_pending = UndoEntry{label, ref, oid, {}, {}, mode};
 }
 
 void Repo::journalEnd(bool ok)
@@ -559,8 +576,11 @@ void Repo::moveRef(const UndoEntry &e, bool back)
         emit undoChanged();
         return;
     }
-    if (back && !m_upstream.isEmpty()
-        && gitSync(m_path, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), e.after, m_upstream}, nullptr) == 0) {
+    // undo drops the commits in after..before; refuse if they are already pushed
+    auto ancestor = [this](const QString &a, const QString &b) {
+        return gitSync(m_path, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), a, b}, nullptr) == 0;
+    };
+    if (back && !m_upstream.isEmpty() && !ancestor(e.after, e.before) && ancestor(e.after, m_upstream)) {
         setOp(false, label, QStringLiteral("Already pushed to %1. Undoing it would need a force push, so Towel won't do it.").arg(m_upstream), true);
         return;
     }
@@ -574,7 +594,7 @@ void Repo::moveRef(const UndoEntry &e, bool back)
         if (back && !e.message.isEmpty()) emit restoreMessage(e.message);
         loadStatus();
     });
-    runGit(label, {QStringLiteral("reset"), e.keepWorktree ? QStringLiteral("--keep") : QStringLiteral("--soft"), to});
+    runGit(label, {QStringLiteral("reset"), e.mode, to});
 }
 
 QString Repo::headId() const
