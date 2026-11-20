@@ -40,6 +40,7 @@ private:
     void updateOp();
     void editMessage();
     void updateBranchChip();
+    void updateUndo();
 
     Repo *m_repo;
     CommitView *m_commits;
@@ -53,7 +54,7 @@ private:
     QWidget *m_empty;
     QLabel *m_emptyMsg;
 
-    QPushButton *m_repoBtn, *m_fetch, *m_pull, *m_push;
+    QPushButton *m_repoBtn, *m_fetch, *m_pull, *m_push, *m_undoBtn;
     QLabel *m_branch, *m_hitLabel;
     QLineEdit *m_search;
 

@@ -197,6 +197,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     connect(m_repo, &Repo::diffChanged, this, [this] { m_diff->setDoc(&m_repo->diff(), m_repo->diffLoading()); });
     connect(m_repo, &Repo::diffLoadingChanged, this, [this] { m_diff->setDoc(&m_repo->diff(), m_repo->diffLoading()); });
     connect(m_repo, &Repo::opChanged, this, &MainWindow::updateOp);
+    connect(m_repo, &Repo::undoChanged, this, &MainWindow::updateUndo);
+    updateUndo();
+    connect(m_repo, &Repo::restoreMessage, this, [this](const QString &msg) { m_commitPanel->setAmendInfo(msg, false); });
     connect(m_repo, &Repo::opFinished, this, [this](bool ok) {
         m_opLog->setVisible(!ok && !m_repo->opOutput().isEmpty());
         if (ok) QTimer::singleShot(3500, this, [this] {
@@ -290,6 +293,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
 
     // shortcuts
     auto sc = [this](const QKeySequence &k, auto fn) { connect(new QShortcut(k, this), &QShortcut::activated, this, fn); };
+    sc(QKeySequence::Undo, [this] { m_repo->undo(); });
+    sc(QKeySequence::Redo, [this] { m_repo->redo(); });
     sc(QKeySequence(QStringLiteral("Ctrl+F")), [this] { m_search->setFocus(); m_search->selectAll(); });
     sc(QKeySequence(QStringLiteral("Ctrl+O")), [this] { openDialog(); });
     sc(QKeySequence(QStringLiteral("F5")), [this] { m_repo->refresh(); });
@@ -369,6 +374,10 @@ QWidget *MainWindow::buildTopBar()
     connect(m_search, &QLineEdit::returnPressed, this, [this] { searchNext(QGuiApplication::keyboardModifiers() & Qt::ShiftModifier); });
     h->addStretch(1);
 
+    m_undoBtn = button(QStringLiteral("↶ Undo"), QString(), bar);
+    connect(m_undoBtn, &QPushButton::clicked, m_repo, &Repo::undo);
+    h->addWidget(m_undoBtn);
+    h->addSpacing(6);
     m_fetch = button(QStringLiteral("Fetch"), QStringLiteral("git fetch --all --prune"), bar);
     m_pull = button(QStringLiteral("↓ Pull"), QStringLiteral("git pull --rebase --autostash"), bar);
     m_push = button(QStringLiteral("↑ Push"), QStringLiteral("git push"), bar);
@@ -514,6 +523,14 @@ void MainWindow::onStatus()
     showFile(files[std::min(next, int(files.size()) - 1)].toMap(), m_openMode);
 }
 
+void MainWindow::updateUndo()
+{
+    const QString u = m_repo->undoLabel(), r = m_repo->redoLabel();
+    m_undoBtn->setEnabled(!u.isEmpty());
+    m_undoBtn->setToolTip(u.isEmpty() ? QStringLiteral("Nothing to undo")
+                                      : QStringLiteral("Undo %1 (Ctrl+Z)%2").arg(u, r.isEmpty() ? QString() : QStringLiteral("\nRedo %1: Ctrl+Shift+Z").arg(r)));
+}
+
 void MainWindow::closeDiff()
 {
     if (m_openFile.isEmpty()) return;
@@ -619,6 +636,9 @@ void MainWindow::runDemo()
             if (step.startsWith(QLatin1String("stage:"))) m_repo->stage({arg});
             else if (step.startsWith(QLatin1String("unstage:"))) m_repo->unstage({arg});
             else if (step == QLatin1String("stageall")) m_repo->stageAll();
+            else if (step == QLatin1String("undo")) m_repo->undo();
+            else if (step == QLatin1String("redo")) m_repo->redo();
+            else if (step.startsWith(QLatin1String("amend:"))) m_repo->commit(arg, true);
             else if (step == QLatin1String("unstageall")) m_repo->unstageAll();
             else if (step.startsWith(QLatin1String("commit:"))) m_repo->commit(arg, false);
             else if (step.startsWith(QLatin1String("rows:"))) // rows:4-9 selects diff rows (header rows count)

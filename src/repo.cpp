@@ -91,6 +91,11 @@ void Repo::open(const QString &pathOrUrl)
             QMutexLocker l(&g_pathMutex);
             g_path = res.root;
         }
+        if (res.root != m_path) {
+            m_undo.clear();
+            m_redo.clear();
+            emit undoChanged();
+        }
         m_path = res.root;
         m_name = res.name;
         m_head = res.head;
@@ -217,6 +222,7 @@ void Repo::runGit(const QString &label, const QStringList &args, const QByteArra
             && (m_opOutput.contains(QLatin1String("non-fast-forward")) || m_opOutput.contains(QLatin1String("[rejected]"))))
             m_opCanForce = true;
         setOp(false, label, m_opOutput.trimmed(), !ok);
+        journalEnd(ok);
         emit opFinished(ok);
         refresh();
     });
@@ -232,6 +238,7 @@ void Repo::runGit(const QString &label, const QStringList &args, const QByteArra
 
 void Repo::pull()
 {
+    journalBegin(QStringLiteral("pull"), true);
     runGit(QStringLiteral("Pull (rebase)"), {QStringLiteral("pull"), QStringLiteral("--rebase"), QStringLiteral("--autostash")});
 }
 
@@ -275,6 +282,7 @@ void Repo::reword(const QString &id, const QString &message)
     QString msg = message.trimmed();
     if (msg.isEmpty()) return;
     msg += QLatin1Char('\n');
+    journalBegin(QStringLiteral("message edit"), false);
     setOp(true, QStringLiteral("Edit commit message"), QString(), false);
 
     QtConcurrent::run([root, id, msg]() -> QPair<bool, QString> {
@@ -322,6 +330,7 @@ void Repo::reword(const QString &id, const QString &message)
         return {true, QStringLiteral("Message updated; later commits replayed.")};
     }).then(this, [this](QPair<bool, QString> res) {
         setOp(false, QStringLiteral("Edit commit message"), res.second, !res.first);
+        journalEnd(res.first);
         emit opFinished(res.first);
         refresh();
     });
@@ -473,7 +482,99 @@ void Repo::commit(const QString &message, bool amend)
         once->deleteLater();
         if (ok) emit committed();
     });
+    journalBegin(amend ? QStringLiteral("amend") : QStringLiteral("commit"), false);
+    if (m_pending && !amend) m_pending->message = message.trimmed();
     runGit(amend ? QStringLiteral("Amend") : QStringLiteral("Commit"), args, msg);
+}
+
+// ---------- undo journal ----------
+
+QPair<QString, QString> Repo::headRef() const
+{
+    GRepo r;
+    if (!openRepo(r, m_path)) return {};
+    GRef head;
+    if (git_repository_head(head.out(), r) != 0 || !git_reference_target(head)) return {};
+    const bool detached = git_repository_head_detached(r) == 1;
+    return {detached ? QStringLiteral("HEAD") : u8(git_reference_name(head)), oidStr(git_reference_target(head))};
+}
+
+void Repo::journalBegin(const QString &label, bool keepWorktree)
+{
+    m_pending.reset();
+    if (m_opRunning) return;
+    const auto [ref, oid] = headRef();
+    if (oid.isEmpty()) return; // unborn: the first commit is not undoable
+    m_pending = UndoEntry{label, ref, oid, {}, {}, keepWorktree};
+}
+
+void Repo::journalEnd(bool ok)
+{
+    if (!m_pending) return;
+    UndoEntry e = *m_pending;
+    m_pending.reset();
+    if (!ok) return;
+    const auto [ref, oid] = headRef();
+    if (ref != e.ref || oid.isEmpty() || oid == e.before) return;
+    e.after = oid;
+    m_undo.append(e);
+    if (m_undo.size() > 50) m_undo.removeFirst();
+    m_redo.clear();
+    emit undoChanged();
+}
+
+QString Repo::undoLabel() const
+{
+    return m_undo.isEmpty() ? QString() : m_undo.last().label;
+}
+
+QString Repo::redoLabel() const
+{
+    return m_redo.isEmpty() ? QString() : m_redo.last().label;
+}
+
+void Repo::undo()
+{
+    if (m_undo.isEmpty() || m_opRunning) return;
+    moveRef(m_undo.last(), true);
+}
+
+void Repo::redo()
+{
+    if (m_redo.isEmpty() || m_opRunning) return;
+    moveRef(m_redo.last(), false);
+}
+
+// Undo = move the ref back to `before`; redo = forward to `after`. Only when
+// the ref is still exactly where the journal left it.
+void Repo::moveRef(const UndoEntry &e, bool back)
+{
+    const QString label = (back ? QStringLiteral("Undo ") : QStringLiteral("Redo ")) + e.label;
+    const auto [ref, oid] = headRef();
+    const QString from = back ? e.after : e.before, to = back ? e.before : e.after;
+    if (ref != e.ref || oid != from) {
+        setOp(false, label, QStringLiteral("The branch has moved since then, so this can no longer be undone here. "
+                                           "git reflog still has every previous position."), true);
+        (back ? m_undo : m_redo).clear();
+        emit undoChanged();
+        return;
+    }
+    if (back && !m_upstream.isEmpty()
+        && gitSync(m_path, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), e.after, m_upstream}, nullptr) == 0) {
+        setOp(false, label, QStringLiteral("Already pushed to %1. Undoing it would need a force push, so Towel won't do it.").arg(m_upstream), true);
+        return;
+    }
+    auto *once = new QObject(this);
+    connect(this, &Repo::opFinished, once, [this, once, e, back](bool ok) {
+        once->deleteLater();
+        if (!ok) return;
+        (back ? m_undo : m_redo).removeLast();
+        (back ? m_redo : m_undo).append(e);
+        emit undoChanged();
+        if (back && !e.message.isEmpty()) emit restoreMessage(e.message);
+        loadStatus();
+    });
+    runGit(label, {QStringLiteral("reset"), e.keepWorktree ? QStringLiteral("--keep") : QStringLiteral("--soft"), to});
 }
 
 QString Repo::headId() const

@@ -1,6 +1,7 @@
 #pragma once
 #include <QSet>
 #include <functional>
+#include <optional>
 #include "commitmodel.h"
 #include "diffdoc.h"
 #include <QObject>
@@ -71,6 +72,12 @@ public:
     QString headMessage() const;
     bool indexBusy() const { return m_indexBusy; }
 
+    // undo journal: ref moves done through Towel (commit, amend, reword, pull)
+    QString undoLabel() const; // "" if nothing to undo
+    QString redoLabel() const;
+    void undo();
+    void redo();
+
 signals:
     void loadedChanged();
     void loadingChanged();
@@ -83,6 +90,8 @@ signals:
     void statusChanged();
     void indexOpFailed(const QString &message);
     void committed();
+    void undoChanged();
+    void restoreMessage(const QString &message); // after undoing a commit
 
 private:
     explicit Repo(QObject *parent = nullptr);
@@ -98,6 +107,14 @@ private:
     void failIndexOp(const QString &out);
     void pumpIndexOps();
     void setOp(bool running, const QString &label, const QString &out, bool failed);
+    struct UndoEntry {
+        QString label, ref, before, after, message;
+        bool keepWorktree = false; // reset --keep (pull) instead of --soft
+    };
+    void journalBegin(const QString &label, bool keepWorktree);
+    void journalEnd(bool ok);
+    void moveRef(const UndoEntry &e, bool back);
+    QPair<QString, QString> headRef() const; // ref name ("HEAD" when detached), oid
 
     CommitModel m_commits;
     DiffDoc m_diff;
@@ -117,6 +134,9 @@ private:
     bool m_indexBusy = false;
     bool m_settling = false; // index op done, waiting for the status reload
     QList<IndexJob> m_indexQueue;
+
+    std::optional<UndoEntry> m_pending;
+    QList<UndoEntry> m_undo, m_redo;
 
     bool m_opRunning = false, m_opFailed = false, m_opCanForce = false;
     QString m_opLabel, m_opOutput;
