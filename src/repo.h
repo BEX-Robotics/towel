@@ -1,4 +1,5 @@
 #pragma once
+#include <QProcessEnvironment>
 #include <QSet>
 #include <functional>
 #include <optional>
@@ -62,7 +63,13 @@ public:
         if (!undoLabel.isEmpty()) journalBegin(undoLabel, undoMode);
         runGit(label, args);
     }
-    QString sequencerState() const; // "cherry-pick", "revert", "merge", "rebase" or ""
+    QString sequencerState() const;
+
+    // interactive rebase: commits from `from` (inclusive) up to HEAD, newest first:
+    // {id, summary, message, author, email}. Empty + *err when not possible.
+    QVariantList rebasePlanFrom(const QString &from, QString *err, QString *base);
+    // items newest first: {id, action: pick|squash|fixup|drop, message (final, for pick rows)}
+    void rebase(const QString &base, const QVariantList &items); // "cherry-pick", "revert", "merge", "rebase" or ""
     // 0 = not rewordable, 1 = rewordable (local only), 2 = rewordable but already pushed
     int rewordState(const QString &id);
     void reword(const QString &id, const QString &message);
@@ -105,7 +112,7 @@ signals:
 
 private:
     explicit Repo(QObject *parent = nullptr);
-    void runGit(const QString &label, const QStringList &args, const QByteArray &input = {});
+    void runGit(const QString &label, const QStringList &args, const QByteArray &input = {}, const QProcessEnvironment *env = nullptr);
     struct IndexJob {
         QStringList args;
         QByteArray input;

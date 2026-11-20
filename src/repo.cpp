@@ -201,14 +201,14 @@ void Repo::dismissOp()
     setOp(false, QString(), QString(), false);
 }
 
-void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input)
+void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input, const QProcessEnvironment *env)
 {
     if (m_opRunning || m_path.isEmpty()) return;
     m_opCanForce = false;
     setOp(true, label, QString(), false);
     auto *p = new QProcess(this);
     p->setWorkingDirectory(m_path);
-    p->setProcessEnvironment(gitEnv());
+    p->setProcessEnvironment(env ? *env : gitEnv());
     p->setProcessChannelMode(QProcess::MergedChannels);
     connect(p, &QProcess::readyRead, this, [this, p] {
         m_opOutput += QString::fromUtf8(p->readAll());
@@ -504,6 +504,106 @@ QString Repo::sequencerState() const
     case GIT_REPOSITORY_STATE_REBASE_MERGE: return QStringLiteral("rebase");
     default: return {};
     }
+}
+
+QVariantList Repo::rebasePlanFrom(const QString &from, QString *err, QString *base)
+{
+    QString out;
+    if (m_branch.isEmpty()) {
+        *err = QStringLiteral("Check out a branch first (HEAD is detached).");
+        return {};
+    }
+    if (gitSync(m_path, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), from, QStringLiteral("HEAD")}, nullptr) != 0) {
+        *err = QStringLiteral("That commit is not on the current branch.");
+        return {};
+    }
+    const bool root = gitSync(m_path, {QStringLiteral("rev-parse"), QStringLiteral("-q"), QStringLiteral("--verify"), from + QStringLiteral("^")}, &out) != 0;
+    *base = root ? QString() : out.trimmed();
+    const QString range = root ? QStringLiteral("HEAD") : *base + QStringLiteral("..HEAD");
+    gitSync(m_path, {QStringLiteral("rev-list"), QStringLiteral("--merges"), QStringLiteral("--count"), range}, &out);
+    if (out.trimmed() != QLatin1String("0")) {
+        *err = QStringLiteral("There are merge commits in this range; Towel's rebase editor handles linear history only.");
+        return {};
+    }
+    if (gitSync(m_path, {QStringLiteral("log"), QStringLiteral("--format=%H%x00%an%x00%ae%x00%B%x1e"), range}, &out) != 0) {
+        *err = out;
+        return {};
+    }
+    QVariantList items;
+    for (const QString &rec : out.split(QChar(0x1e), Qt::SkipEmptyParts)) {
+        const QStringList f = rec.trimmed().split(QChar(0));
+        if (f.size() < 4) continue;
+        const QString msg = f[3].trimmed();
+        items << QVariantMap{{"id", f[0]}, {"author", f[1]}, {"email", f[2]}, {"message", msg}, {"original", msg}, {"summary", msg.section(QLatin1Char('\n'), 0, 0)}};
+    }
+    if (items.size() > 500) {
+        *err = QStringLiteral("More than 500 commits; pick a newer starting point.");
+        return {};
+    }
+    return items;
+}
+
+// Runs `git rebase -i` with a prepared todo. Messages are applied with
+// `exec git commit --amend -F file`, so git never needs an editor.
+void Repo::rebase(const QString &base, const QVariantList &items)
+{
+    if (m_opRunning || items.isEmpty()) return;
+    QString gitDir;
+    gitSync(m_path, {QStringLiteral("rev-parse"), QStringLiteral("--absolute-git-dir")}, &gitDir);
+    QDir dir(gitDir.trimmed() + QStringLiteral("/towel-rebase"));
+    dir.removeRecursively();
+    QDir().mkpath(dir.path());
+    auto quote = [](QString s) { return QLatin1Char('\'') + s.replace(QLatin1Char('\''), QStringLiteral("'\\''")) + QLatin1Char('\''); };
+
+    // oldest first; group = a pick followed by its squash/fixup rows
+    QStringList todo;
+    int n = 0;
+    QString groupMsg, origMsg;
+    bool groupOpen = false, needAmend = false;
+    auto closeGroup = [&] {
+        if (groupOpen && needAmend) {
+            const QString file = dir.filePath(QStringLiteral("msg-%1").arg(n++));
+            QFile f(file);
+            if (f.open(QIODevice::WriteOnly)) f.write(groupMsg.toUtf8() + '\n');
+            todo << QStringLiteral("exec git commit --amend --only --allow-empty --no-verify -q -F ") + quote(file);
+        }
+        groupOpen = needAmend = false;
+    };
+    for (qsizetype i = items.size() - 1; i >= 0; --i) {
+        const QVariantMap it = items[i].toMap();
+        const QString action = it.value("action").toString(), id = it.value("id").toString();
+        if (action == QLatin1String("drop")) continue;
+        if ((action == QLatin1String("squash") || action == QLatin1String("fixup")) && groupOpen) {
+            todo << QStringLiteral("fixup ") + id;
+            if (action == QLatin1String("squash")) {
+                groupMsg += QStringLiteral("\n\n") + it.value("original").toString();
+                needAmend = true;
+            }
+            continue;
+        }
+        closeGroup();
+        todo << QStringLiteral("pick ") + id;
+        groupOpen = true;
+        groupMsg = it.value("message").toString().trimmed();
+        needAmend = groupMsg != it.value("original").toString().trimmed();
+    }
+    closeGroup();
+    QFile tf(dir.filePath(QStringLiteral("todo")));
+    if (!tf.open(QIODevice::WriteOnly)) return setOp(false, QStringLiteral("Rebase"), QStringLiteral("Could not write the rebase plan."), true);
+    tf.write(todo.join(QLatin1Char('\n')).toUtf8() + '\n');
+    tf.close();
+
+    QProcessEnvironment env = gitEnv();
+    env.insert(QStringLiteral("GIT_SEQUENCE_EDITOR"), QStringLiteral("cp ") + quote(tf.fileName()));
+    QStringList args{QStringLiteral("rebase"), QStringLiteral("-i"), QStringLiteral("--autostash"), QStringLiteral("--no-autosquash")};
+    args << (base.isEmpty() ? QStringLiteral("--root") : base);
+    journalBegin(QStringLiteral("rebase"), QStringLiteral("--keep"));
+    auto *once = new QObject(this);
+    connect(this, &Repo::opFinished, once, [this, once, dir] {
+        once->deleteLater();
+        if (sequencerState() != QLatin1String("rebase")) QDir(dir).removeRecursively(); // stopped rebases still need it
+    });
+    runGit(QStringLiteral("Rebase"), args, {}, &env);
 }
 
 QPair<QString, QString> Repo::headRef() const

@@ -4,6 +4,7 @@
 #include "commitview.h"
 #include "diffview.h"
 #include "panels.h"
+#include "rebaseview.h"
 #include "repo.h"
 #include "theme.h"
 
@@ -153,6 +154,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     m_center->addWidget(m_commits);
     m_center->addWidget(m_diff);
     m_center->addWidget(m_empty);
+    m_rebase = new RebaseView(m_center);
+    m_center->addWidget(m_rebase);
+    connect(m_rebase, &RebaseView::cancel, this, [this] {
+        m_center->setCurrentWidget(m_commits);
+        m_commits->setFocus();
+    });
+    connect(m_rebase, &RebaseView::run, this, [this](const QString &base, const QVariantList &items) {
+        m_center->setCurrentWidget(m_commits);
+        m_commits->setFocus();
+        m_repo->rebase(base, items);
+    });
     m_center->setCurrentWidget(m_empty);
     m_right = new QStackedWidget(m_split);
     m_right->setMinimumWidth(260);
@@ -601,6 +613,19 @@ void MainWindow::stashChanges()
     gitThen(QStringLiteral("Stash"), args);
 }
 
+void MainWindow::startRebase(const QString &from)
+{
+    QString err, base;
+    const QVariantList items = m_repo->rebasePlanFrom(from, &err, &base);
+    if (!err.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Interactive rebase"), err);
+        return;
+    }
+    closeDiff();
+    m_rebase->start(base, m_repo->branch(), items);
+    m_center->setCurrentWidget(m_rebase);
+}
+
 void MainWindow::commitMenu(int row, const QPoint &pos)
 {
     const QString id = m_repo->commits()->idAt(row);
@@ -608,7 +633,7 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
     QMenu menu(this);
     if (id == QLatin1String("WIP")) {
         if (const QString seq = m_repo->sequencerState(); !seq.isEmpty()) {
-            if (seq == QLatin1String("cherry-pick") || seq == QLatin1String("revert"))
+            if (seq != QLatin1String("merge"))
                 menu.addAction(QStringLiteral("Continue %1 (after staging the resolved files)").arg(seq), this, [this, seq] {
                     gitThen(QStringLiteral("Continue ") + seq, {seq, QStringLiteral("--continue")});
                 });
@@ -664,6 +689,7 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
     }
     if (m_repo->rewordState(id)) {
         menu.addSeparator();
+        menu.addAction(QStringLiteral("Interactive rebase from here…"), this, [this, id] { startRebase(id); });
         menu.addAction(QStringLiteral("Edit message…"), this, &MainWindow::editMessage);
     }
     menu.addSeparator();
@@ -825,6 +851,8 @@ void MainWindow::runDemo()
             else if (step.startsWith(QLatin1String("unstage:"))) m_repo->unstage({arg});
             else if (step == QLatin1String("stageall")) m_repo->stageAll();
             else if (step == QLatin1String("undo")) m_repo->undo();
+            else if (step.startsWith(QLatin1String("rebase:"))) startRebase(arg); // then key: steps go to the list
+            else if (step == QLatin1String("rebasego")) m_rebase->findChildren<QPushButton *>().last()->click();
             else if (step.startsWith(QLatin1String("pick:")))
                 gitThen(QStringLiteral("Cherry-pick"), {QStringLiteral("cherry-pick"), arg}, {}, {}, {}, QStringLiteral("cherry-pick"));
             else if (step.startsWith(QLatin1String("mixed:")))
@@ -839,8 +867,11 @@ void MainWindow::runDemo()
                 m_diff->area()->selectRows(arg.section(QLatin1Char('-'), 0, 0).toInt(), arg.section(QLatin1Char('-'), 1).toInt());
             else if (step.startsWith(QLatin1String("key:"))) // e.g. key:jjs: keystrokes into the diff
                 for (QChar c : arg) {
-                    QKeyEvent ev(QEvent::KeyPress, Qt::Key_A + (c.toUpper().unicode() - 'A'), Qt::NoModifier, c);
-                    QApplication::sendEvent(m_diff->area(), &ev);
+                    const bool mv = c == QLatin1Char('<') || c == QLatin1Char('>'); // Alt+Up / Alt+Down
+                    QKeyEvent ev(QEvent::KeyPress, mv ? (c == QLatin1Char('<') ? Qt::Key_Up : Qt::Key_Down) : Qt::Key_A + (c.toUpper().unicode() - 'A'),
+                                 mv ? Qt::AltModifier : Qt::NoModifier, mv ? QString() : QString(c));
+                    QWidget *target = m_center->currentWidget() == m_rebase ? static_cast<QWidget *>(m_rebase->findChild<RebaseList *>()) : m_diff->area();
+                    QApplication::sendEvent(target ? target : m_diff->area(), &ev);
                 }
             else if (step.startsWith(QLatin1String("open:"))) {
                 const QString mode = arg.section(QLatin1Char(':'), 0, 0), path = arg.section(QLatin1Char(':'), 1);

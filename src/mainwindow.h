@@ -14,6 +14,7 @@ class DetailsPanel;
 class Sidebar;
 class Repo;
 class CommitPanel;
+class RebaseView;
 
 class MainWindow : public QMainWindow
 {
@@ -47,6 +48,7 @@ private:
     void createBranch(const QString &at);
     void deleteBranch(const QString &name);
     void stashChanges();
+    void startRebase(const QString &from);
     // run a git command; on failure whose output matches `retryIf`, ask and run `retry`
     void gitThen(const QString &label, const QStringList &args, const QString &retryIf = {}, const QString &question = {},
                  const QStringList &retry = {}, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep"));
@@ -56,6 +58,7 @@ private:
     DiffView *m_diff;
     DetailsPanel *m_details;
     CommitPanel *m_commitPanel;
+    RebaseView *m_rebase;
     QStackedWidget *m_right;
     Sidebar *m_sidebar;
     QSplitter *m_split;
