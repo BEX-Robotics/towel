@@ -24,7 +24,7 @@ AvatarCache *AvatarCache::instance()
 
 AvatarCache::AvatarCache(QObject *parent) : QObject(parent)
 {
-    m_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/avatars");
+    m_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/avatars2") /* v2: no Gravatar identicons */;
     QDir().mkpath(m_dir);
 }
 
@@ -50,12 +50,24 @@ QImage AvatarCache::get(const QString &email)
     return {};
 }
 
+namespace {
+// GitHub's default identicon (a 2-color pixel pattern) is not a photo
+bool isIdenticon(const QImage &img)
+{
+    const QImage t = img.scaled(24, 24, Qt::IgnoreAspectRatio, Qt::FastTransformation).convertToFormat(QImage::Format_RGB32);
+    QSet<QRgb> colors;
+    for (int y = 0; y < t.height() && colors.size() <= 3; ++y)
+        for (int x = 0; x < t.width(); ++x) colors.insert(t.pixel(x, y));
+    return colors.size() <= 3;
+}
+} // namespace
+
 void AvatarCache::request(const QString &key, const QString &email)
 {
     const QString file = m_dir + QLatin1Char('/') + key + QStringLiteral(".png");
     if (QFileInfo fi(file); fi.exists() && fi.lastModified().daysTo(QDateTime::currentDateTime()) < 14) {
         QImage img(file);
-        if (!img.isNull()) {
+        if (!img.isNull() && !isIdenticon(img)) {
             {
                 QMutexLocker l(&m_lock);
                 m_mem.insert(key, img);
@@ -89,7 +101,7 @@ void AvatarCache::pump()
         else if (auto m2 = ghUser.match(e); m2.hasMatch())
             url = QUrl(QStringLiteral("https://github.com/%1.png?size=%2").arg(m2.captured(1)).arg(kSize));
         else
-            url = QUrl(QStringLiteral("https://www.gravatar.com/avatar/%1?s=%2&d=retro").arg(key).arg(kSize));
+            url = QUrl(QStringLiteral("https://www.gravatar.com/avatar/%1?s=%2&d=404").arg(key).arg(kSize));
 
         QNetworkRequest req(url);
         req.setTransferTimeout(10000);
@@ -102,14 +114,15 @@ void AvatarCache::pump()
             --m_inflight;
             QImage img;
             if (reply->error() == QNetworkReply::NoError) img.loadFromData(reply->readAll());
-            if (img.isNull()) {
+            const bool generated = !img.isNull() && isIdenticon(img); // draw initials instead
+            if (img.isNull() || generated) {
                 {
                     QMutexLocker l(&m_lock);
                     m_failed.insert(key);
                     m_pending.remove(key);
                 }
                 // only remember real "not found" answers, not offline moments
-                if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 404) {
+                if (generated || reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 404) {
                     QFile f(m_dir + QLatin1Char('/') + key + QStringLiteral(".none"));
                     if (f.open(QIODevice::WriteOnly)) f.close();
                 }
@@ -148,10 +161,13 @@ void AvatarCache::paint(QPainter *p, const QRectF &r, const QString &email, cons
         p->fillRect(inner, QColor(0x1b, 0x1d, 0x23));
         p->drawImage(inner, img);
     } else {
-        // initials on a stable color derived from the email
-        const uint h = qHash(email.toLower());
-        QColor bg = QColor::fromHsl(int(h % 360), 90, 70);
+        // no photo: initials on a vivid color picked from the email
+        static const QRgb palette[] = {0xe5484d, 0xf76b15, 0xffb224, 0x46a758, 0x12a594, 0x00a2c7, 0x0090ff, 0x3e63dd,
+                                       0x6e56cf, 0x8e4ec6, 0xd6409f, 0xe54666, 0xbd4b00, 0x5bb98b, 0xab4aba, 0x7ce2fe};
+        const QByteArray hash = QCryptographicHash::hash(email.trimmed().toLower().toUtf8(), QCryptographicHash::Md5);
+        const QColor bg = QColor::fromRgb(palette[uchar(hash[0]) % (sizeof(palette) / sizeof(palette[0]))]);
         p->fillRect(inner, bg);
+        const bool light = 0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue() > 165;
         QString initials;
         for (const QString &part : name.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
             initials += part.at(0).toUpper();
@@ -162,7 +178,7 @@ void AvatarCache::paint(QPainter *p, const QRectF &r, const QString &email, cons
         f.setPixelSize(int(inner.height() * 0.42));
         f.setBold(true);
         p->setFont(f);
-        p->setPen(QColor(255, 255, 255, 230));
+        p->setPen(light ? QColor(0x12, 0x14, 0x18) : QColor(255, 255, 255));
         p->drawText(inner, Qt::AlignCenter, initials);
     }
     p->restore();
