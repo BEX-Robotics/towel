@@ -50,6 +50,7 @@ CommitView::CommitView(CommitModel *model, QWidget *parent) : QAbstractScrollAre
 }
 
 int CommitView::graphWidth() const { return std::min(std::max(m_model->lanes(), 2) * kLaneW + 16, 300); }
+int CommitView::refsWidth() const { return viewport()->width() > 760 ? 176 : 0; }
 int CommitView::authorWidth() const { return viewport()->width() > 1000 ? 150 : 0; }
 int CommitView::dateWidth() const { return viewport()->width() > 700 ? 96 : 0; }
 
@@ -217,14 +218,50 @@ void CommitView::paintRow(QPainter &p, int row, int y)
     if (!m_model->isHit(row)) p.setOpacity(0.3);
     const qreal cy = y + kRowH / 2.0;
 
-    paintGraph(p, row, QRectF(0, y, gw, kRowH));
-
-    // refs inline, then the message
+    const int rw = refsWidth();
+    const auto &refs = m_model->refs(row);
     const int dw = dateWidth(), aw = authorWidth();
     const qreal right = w - dw - aw - 12;
-    qreal x = gw + 6;
-    const auto &refs = m_model->refs(row);
-    for (int i = 0; i < refs.size(); ++i) {
+    qreal x = rw + gw + 6;
+    if (rw && !refs.isEmpty()) {
+        // left column: the most relevant ref as a chip, "+N" for the rest, and a
+        // thin line in the lane color from the chip to its commit
+        int best = 0;
+        for (int i = 0; i < refs.size(); ++i) {
+            const auto &g = refs[i];
+            const int score = g.current * 8 + g.head * 4 + g.local * 2 + !g.tag;
+            const auto &b = refs[best];
+            if (score > b.current * 8 + b.head * 4 + b.local * 2 + !b.tag) best = i;
+        }
+        const QFont mf = theme::uiFont(11, true);
+        const QString more = refs.size() > 1 ? QStringLiteral("+%1").arg(refs.size() - 1) : QString();
+        const int moreW = more.isEmpty() ? 0 : QFontMetrics(mf).horizontalAdvance(more) + 12;
+        RefGroup g = refs[best];
+        if (g.remote && !g.local && g.name.contains(QLatin1Char('/'))) g.name = g.name.section(QLatin1Char('/'), 1); // the cloud icon says "remote"
+        const qreal cw = paintChip(p, g, lane, 10, cy, rw - 22 - moreW);
+        qreal lx = 10 + cw;
+        if (!more.isEmpty()) {
+            p.setRenderHint(QPainter::Antialiasing);
+            const QRectF mr(lx + 4, cy - 9, moreW - 4, 18);
+            p.setPen(Qt::NoPen);
+            p.setBrush(theme::field);
+            p.drawRoundedRect(mr, 9, 9);
+            p.setFont(mf);
+            p.setPen(theme::dim);
+            p.drawText(mr, Qt::AlignCenter, more);
+            lx = mr.right();
+        }
+        const qreal nodeX = rw + 10 + kLaneW * r->col + kLaneW / 2.0 - kNode / 2.0;
+        QColor lc = lane;
+        lc.setAlpha(170);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        p.fillRect(QRectF(lx + 3, cy - 0.75, std::max<qreal>(0, nodeX - lx - 3), 1.5), lc);
+    }
+
+    paintGraph(p, row, QRectF(rw, y, gw, kRowH));
+
+    // narrow window: refs inline before the message
+    for (int i = 0; !rw && i < refs.size(); ++i) {
         const qreal room = right - x - 140; // always leave room for the message
         if (room < 60) break;
         const bool last = i == refs.size() - 1;
@@ -232,7 +269,6 @@ void CommitView::paintRow(QPainter &p, int row, int y)
         if (cw == 0) break;
         x += cw + 6;
         if (!last && x > gw + 6 + 2 * 220) {
-            // too many refs: summarize the rest
             p.setFont(theme::uiFont(11));
             p.setPen(theme::dim);
             const QString more = QStringLiteral("+%1").arg(refs.size() - i - 1);
@@ -241,7 +277,7 @@ void CommitView::paintRow(QPainter &p, int row, int y)
             break;
         }
     }
-    if (!refs.isEmpty()) x += 4;
+    if (!rw && !refs.isEmpty()) x += 4;
 
     const QFont f = theme::uiFont(13);
     const QFontMetrics fm(f);
@@ -338,7 +374,11 @@ bool CommitView::viewportEvent(QEvent *e)
             const int x = he->pos().x();
             if (dateWidth() && x > viewport()->width() - dateWidth() - 4) {
                 tip = QLocale().toString(QDateTime::fromSecsSinceEpoch(row->time), QLocale::LongFormat);
-            } else if (x > graphWidth()) {
+            } else if (x < refsWidth()) {
+                QStringList refs;
+                for (const auto &g : m_model->refs(r)) refs << g.name + (g.local && g.remote ? QStringLiteral("  (local + remote)") : g.remote ? QStringLiteral("  (remote)") : g.tag ? QStringLiteral("  (tag)") : QString());
+                tip = refs.join(QLatin1Char('\n'));
+            } else if (x > refsWidth() + graphWidth()) {
                 QStringList refs;
                 for (const auto &g : m_model->refs(r)) refs << g.name;
                 tip = m_model->summary(r);
