@@ -366,7 +366,23 @@ QWidget *MainWindow::buildTopBar()
     h->setSpacing(8);
     h->addWidget(new Logo(24, bar));
     m_repoBtn = button(QStringLiteral("Open repository…"), QStringLiteral("Ctrl+O"), bar);
-    connect(m_repoBtn, &QPushButton::clicked, this, &MainWindow::openDialog);
+    connect(m_repoBtn, &QPushButton::clicked, this, [this] {
+        // recent repositories, then "Open other…"
+        QMenu menu(this);
+        const QStringList recent = QSettings().value("recentRepos").toStringList();
+        for (const QString &path : recent) {
+            if (path == m_repo->path()) continue;
+            QAction *a = menu.addAction(QDir(path).dirName() + QStringLiteral("    ") + QDir::toNativeSeparators(path), this, [this, path] {
+                m_selectedId.clear();
+                closeDiff();
+                m_repo->open(path);
+            });
+            a->setEnabled(QDir(path).exists());
+        }
+        if (!menu.isEmpty()) menu.addSeparator();
+        menu.addAction(QStringLiteral("Open other…\tCtrl+O"), this, &MainWindow::openDialog);
+        menu.exec(m_repoBtn->mapToGlobal(QPoint(0, m_repoBtn->height())));
+    });
     h->addWidget(m_repoBtn);
     m_branch = new QLabel(bar);
     m_branch->setTextFormat(Qt::RichText);
@@ -489,7 +505,16 @@ void MainWindow::onLoaded()
 {
     setWindowTitle(m_repo->name() + QStringLiteral(" — Towel"));
     m_repoBtn->setText(m_repo->name());
-    m_repoBtn->setToolTip(m_repo->path() + QStringLiteral("\nCtrl+O to open another"));
+    m_repoBtn->setToolTip(m_repo->path() + QStringLiteral("\nClick for recent repositories · Ctrl+O to open another"));
+    {
+        QSettings st;
+        QStringList recent = st.value("recentRepos").toStringList();
+        if (recent.value(0) != m_repo->path()) {
+            recent.removeAll(m_repo->path());
+            recent.prepend(m_repo->path());
+            st.setValue("recentRepos", recent.mid(0, 12));
+        }
+    }
     updateBranchChip();
     m_sidebar->list()->setData(m_repo->branches(), m_repo->tags(), m_repo->stashes());
     if (m_openFile.isEmpty()) m_center->setCurrentWidget(m_commits);

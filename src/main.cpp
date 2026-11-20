@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QSettings>
 #include <QStyleFactory>
 #include <QTimer>
 #include <git2.h>
@@ -53,10 +54,17 @@ int main(int argc, char *argv[])
     // and fragment the heap; we read each object once, so it buys nothing.
     git_libgit2_opts(GIT_OPT_ENABLE_CACHING, 0);
 
-    QString start = QDir::currentPath();
+    QString start;
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i)
         if (!args[i].startsWith(QLatin1Char('-'))) start = QDir(args[i]).absolutePath();
+    if (start.isEmpty()) {
+        // no path given: the repository we were started in, else the last one opened
+        git_buf found = GIT_BUF_INIT;
+        if (git_repository_discover(&found, QDir::currentPath().toUtf8().constData(), 0, nullptr) == 0) start = QDir::currentPath();
+        else start = QSettings().value("recentRepos").toStringList().value(0, QDir::currentPath());
+        git_buf_dispose(&found);
+    }
 
     MainWindow w;
     w.show();
