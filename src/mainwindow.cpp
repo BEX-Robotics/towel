@@ -226,6 +226,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     connect(m_repo, &Repo::statusChanged, this, &MainWindow::onStatus);
     connect(m_commitPanel, &CommitPanel::openFile, this, [this](const QVariantMap &f, const QString &mode) { showFile(f, mode); });
     connect(m_commitPanel, &CommitPanel::stage, m_repo, &Repo::stage);
+    connect(m_diff->area(), &DiffArea::applyHunk, this, [this](const QSet<int> &del, const QSet<int> &add) {
+        if (m_openMode.isEmpty() || m_openFile.isEmpty()) return;
+        QStringList paths{m_openFile.value("path").toString()};
+        if (!m_openFile.value("oldPath").toString().isEmpty()) paths << m_openFile.value("oldPath").toString();
+        m_repo->applyLines(paths, m_openMode == QLatin1String("staged"), del, add);
+    });
     connect(m_commitPanel, &CommitPanel::unstage, m_repo, &Repo::unstage);
     connect(m_commitPanel, &CommitPanel::stageAll, m_repo, &Repo::stageAll);
     connect(m_commitPanel, &CommitPanel::unstageAll, m_repo, &Repo::unstageAll);
@@ -474,6 +480,13 @@ void MainWindow::onLoaded()
 
 void MainWindow::showFile(const QVariantMap &f, const QString &mode)
 {
+    const bool reload = !m_openFile.isEmpty() && mode == m_openMode && f.value("path") == m_openFile.value("path");
+    if (reload) m_diff->area()->keepPlace();
+    m_diff->area()->setStaging(mode == QLatin1String("unstaged") ? 1 : mode == QLatin1String("staged") ? 2 : 0);
+    if (!mode.isEmpty() && !reload) {
+        QWidget *fw = QApplication::focusWidget();
+        if (!qobject_cast<QLineEdit *>(fw) && !qobject_cast<QPlainTextEdit *>(fw)) m_diff->area()->setFocus();
+    }
     m_openFile = f;
     m_openMode = mode;
     if (mode.isEmpty()) m_details->setOpenPath(f.value("path").toString());
@@ -598,7 +611,7 @@ void MainWindow::editMessage()
 
 void MainWindow::runDemo()
 {
-    // TOWEL_DEMO_SCRIPT="stage:a.txt;open:staged:a.txt;commit:message" runs steps 900 ms apart
+    // TOWEL_DEMO_SCRIPT="stage:a.txt;open:staged:a.txt;key:jjs;commit:message" runs steps 900 ms apart
     const QStringList steps = qEnvironmentVariable("TOWEL_DEMO_SCRIPT").split(QLatin1Char(';'), Qt::SkipEmptyParts);
     for (int k = 0; k < steps.size(); ++k) {
         QTimer::singleShot(1500 + 900 * k, this, [this, step = steps[k]] {
@@ -608,6 +621,11 @@ void MainWindow::runDemo()
             else if (step == QLatin1String("stageall")) m_repo->stageAll();
             else if (step == QLatin1String("unstageall")) m_repo->unstageAll();
             else if (step.startsWith(QLatin1String("commit:"))) m_repo->commit(arg, false);
+            else if (step.startsWith(QLatin1String("key:"))) // e.g. key:jjs: keystrokes into the diff
+                for (QChar c : arg) {
+                    QKeyEvent ev(QEvent::KeyPress, Qt::Key_A + (c.toUpper().unicode() - 'A'), Qt::NoModifier, c);
+                    QApplication::sendEvent(m_diff->area(), &ev);
+                }
             else if (step.startsWith(QLatin1String("open:"))) {
                 const QString mode = arg.section(QLatin1Char(':'), 0, 0), path = arg.section(QLatin1Char(':'), 1);
                 for (const QVariant &v : m_commitPanel->files(mode))

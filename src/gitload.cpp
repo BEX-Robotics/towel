@@ -680,6 +680,118 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
     return res;
 }
 
+QByteArray partialPatch(const QString &root, bool staged, const QString &path, const QSet<int> &selDel,
+                        const QSet<int> &selAdd, QString *err, bool *wholeFile)
+{
+    *wholeFile = false;
+    GRepo r;
+    if (!openRepo(r, root)) {
+        *err = gitErr();
+        return {};
+    }
+    // same engine and options as the displayed diff, so line numbers match
+    git_diff_options o;
+    git_diff_options_init(&o, GIT_DIFF_OPTIONS_VERSION);
+    o.context_lines = 3;
+    o.flags |= GIT_DIFF_DISABLE_PATHSPEC_MATCH;
+    QByteArray p1 = path.toUtf8();
+    char *specs[1] = {p1.data()};
+    o.pathspec.strings = specs;
+    o.pathspec.count = 1;
+    GDiff diff;
+    if (makeDiff(diff.out(), r, staged ? QStringLiteral("WIP:staged") : QStringLiteral("WIP:unstaged"), &o) != 0) {
+        *err = gitErr();
+        return {};
+    }
+    size_t idx = SIZE_MAX;
+    for (size_t i = 0; i < git_diff_num_deltas(diff); ++i) {
+        const git_diff_delta *d = git_diff_get_delta(diff, i);
+        if (d->new_file.path && path == u8(d->new_file.path)) idx = i;
+    }
+    if (idx == SIZE_MAX) {
+        *err = QStringLiteral("The file has no changes left here.");
+        return {};
+    }
+    const git_diff_delta *d = git_diff_get_delta(diff, idx);
+    if (d->status != GIT_DELTA_MODIFIED) { // new/deleted/renamed: whole file only
+        *wholeFile = true;
+        return {};
+    }
+    GPatch p;
+    if (git_patch_from_diff(p.out(), diff, idx) != 0 || !p || (git_patch_get_delta(p)->flags & GIT_DIFF_FLAG_BINARY)) {
+        *wholeFile = true;
+        return {};
+    }
+    // file header: everything libgit2 prints before the first hunk
+    git_buf buf = GIT_BUF_INIT;
+    if (git_patch_to_buf(&buf, p) != 0) {
+        *err = gitErr();
+        return {};
+    }
+    QByteArray full(buf.ptr, qsizetype(buf.size));
+    git_buf_dispose(&buf);
+    const qsizetype at = full.startsWith("@@ ") ? 0 : full.indexOf("\n@@ ");
+    if (at < 0) {
+        *err = QStringLiteral("No text changes to stage.");
+        return {};
+    }
+    QByteArray out = full.left(at ? at + 1 : 0);
+
+    // Staging (forward): unselected '+' dropped, unselected '-' kept as context.
+    // Unstaging (applied in reverse): unselected '-' dropped, unselected '+' kept as context.
+    int cum = 0, picked = 0;
+    const size_t nh = git_patch_num_hunks(p);
+    for (size_t h = 0; h < nh; ++h) {
+        const git_diff_hunk *hunk = nullptr;
+        size_t nl = 0;
+        if (git_patch_get_hunk(&hunk, &nl, p, h) != 0) break;
+        QByteArray body;
+        int oc = 0, nc = 0, changes = 0;
+        bool kept = true; // whether the previous line was emitted (for "\ No newline")
+        for (size_t l = 0; l < nl; ++l) {
+            const git_diff_line *line = nullptr;
+            if (git_patch_get_line_in_hunk(&line, p, h, l) != 0) break;
+            const char t = line->origin;
+            if (t == GIT_DIFF_LINE_CONTEXT_EOFNL || t == GIT_DIFF_LINE_ADD_EOFNL || t == GIT_DIFF_LINE_DEL_EOFNL) {
+                if (kept) body += "\\ No newline at end of file\n";
+                continue;
+            }
+            char ch = t;
+            if (t == '+' && !selAdd.contains(line->new_lineno)) ch = staged ? ' ' : 0;
+            else if (t == '-' && !selDel.contains(line->old_lineno)) ch = staged ? 0 : ' ';
+            kept = ch != 0;
+            if (!kept) continue;
+            if (ch != ' ') ++changes;
+            if (ch != '+') ++oc;
+            if (ch != '-') ++nc;
+            body += ch;
+            body.append(line->content, qsizetype(line->content_len));
+            if (!body.endsWith('\n')) body += '\n';
+        }
+        if (!changes) continue;
+        picked += changes;
+        // the side git checks against stays exact; the other side is derived
+        int os, ns;
+        if (!staged) {
+            os = hunk->old_start;
+            const int pos = (hunk->old_lines ? os : os + 1) + cum;
+            ns = nc ? pos : pos - 1;
+        } else {
+            ns = hunk->new_start;
+            const int pos = (hunk->new_lines ? ns : ns + 1) - cum;
+            os = oc ? pos : pos - 1;
+        }
+        cum += nc - oc;
+        out += QStringLiteral("@@ -%1,%2 +%3,%4 @@\n").arg(os).arg(oc).arg(ns).arg(nc).toLatin1();
+        out += body;
+    }
+    if (!picked) {
+        *err = QStringLiteral("Those lines are no longer changed. Reloading.");
+        return {};
+    }
+    return out;
+}
+
 WorkStatus workStatus(const QString &root)
 {
     WorkStatus ws;

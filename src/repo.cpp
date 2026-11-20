@@ -361,16 +361,63 @@ const QStringList kFromStdin{QStringLiteral("--pathspec-from-file=-"), QStringLi
 
 void Repo::indexOp(const QStringList &args, const QByteArray &input)
 {
-    m_indexQueue.append({args, input});
+    m_indexQueue.append({args, input, {}});
     pumpIndexOps();
+}
+
+void Repo::applyLines(const QStringList &paths, bool staged, const QSet<int> &selDel, const QSet<int> &selAdd)
+{
+    if (paths.isEmpty() || (selDel.isEmpty() && selAdd.isEmpty())) return;
+    const QString path = paths.first();
+    const QString root = m_path;
+    const bool hasHead = m_hasHead;
+    m_indexQueue.append({{}, {}, [=](QStringList &args, QByteArray &input, QString &err) {
+                             bool whole = false;
+                             input = gitload::partialPatch(root, staged, path, selDel, selAdd, &err, &whole);
+                             if (whole) { // new, deleted, renamed or binary: the whole file
+                                 input = pathspecs(paths);
+                                 if (!staged) args = QStringList{QStringLiteral("add"), QStringLiteral("-A")} + kFromStdin;
+                                 else if (hasHead) args = QStringList{QStringLiteral("restore"), QStringLiteral("--staged")} + kFromStdin;
+                                 else args = QStringList{QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-q")} + kFromStdin;
+                                 return;
+                             }
+                             args = {QStringLiteral("apply"), QStringLiteral("--cached"), QStringLiteral("--whitespace=nowarn")};
+                             if (staged) args << QStringLiteral("--reverse");
+                             args << QStringLiteral("-");
+                         }});
+    pumpIndexOps();
+}
+
+void Repo::failIndexOp(const QString &out)
+{
+    m_indexBusy = false;
+    m_indexQueue.clear();
+    setOp(false, QStringLiteral("Staging"), out.isEmpty() ? QStringLiteral("git failed") : out, true);
+    emit indexOpFailed(out);
+    m_settling = true;
+    loadStatus();
 }
 
 // Index operations run one at a time (git takes index.lock), then refresh only the status.
 void Repo::pumpIndexOps()
 {
     if (m_indexBusy || m_indexQueue.isEmpty() || m_path.isEmpty()) return;
-    const auto [args, input] = m_indexQueue.takeFirst();
+    IndexJob job = m_indexQueue.takeFirst();
     m_indexBusy = true;
+    if (!job.gen) return runIndexJob(job.args, job.input);
+    QtConcurrent::run([gen = job.gen] {
+        IndexJob out;
+        QString err;
+        gen(out.args, out.input, err);
+        return std::make_pair(out, err);
+    }).then(this, [this](std::pair<IndexJob, QString> res) {
+        if (!res.second.isEmpty()) return failIndexOp(res.second);
+        runIndexJob(res.first.args, res.first.input);
+    });
+}
+
+void Repo::runIndexJob(const QStringList &args, const QByteArray &input)
+{
     auto *p = new QProcess(this);
     p->setWorkingDirectory(m_path);
     p->setProcessEnvironment(gitEnv());
@@ -378,12 +425,8 @@ void Repo::pumpIndexOps()
     connect(p, &QProcess::finished, this, [this, p](int code, QProcess::ExitStatus st) {
         const QString out = QString::fromUtf8(p->readAll()).trimmed();
         p->deleteLater();
+        if (st != QProcess::NormalExit || code != 0) return failIndexOp(out);
         m_indexBusy = false;
-        if (st != QProcess::NormalExit || code != 0) {
-            m_indexQueue.clear();
-            setOp(false, QStringLiteral("Staging"), out.isEmpty() ? QStringLiteral("git failed") : out, true);
-            emit indexOpFailed(out);
-        }
         if (m_indexQueue.isEmpty()) {
             m_settling = true;
             loadStatus();

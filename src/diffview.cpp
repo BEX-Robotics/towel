@@ -3,7 +3,9 @@
 
 #include <QButtonGroup>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
 #include <QToolButton>
@@ -28,15 +30,176 @@ DiffArea::DiffArea(QWidget *parent) : QAbstractScrollArea(parent)
     m_cw = fm.horizontalAdvance(QLatin1Char('M'));
     m_lh = int(std::ceil(fm.height()));
     verticalScrollBar()->setSingleStep(m_lh * 3);
+    setFocusPolicy(Qt::StrongFocus);
+    viewport()->setMouseTracking(true);
 }
 
 void DiffArea::setDoc(const DiffDoc *doc, bool loading)
 {
     m_doc = doc;
+    m_hoverUnit = -1;
+    if (m_keepPlace) {
+        // reload after staging: keep showing the old content until the new one
+        // arrives, then stay at the same scroll offset and hunk index
+        const int sv = verticalScrollBar()->value(), cur = m_current;
+        m_loading = false;
+        rebuildRows();
+        verticalScrollBar()->setValue(sv);
+        if (!loading) {
+            m_keepPlace = false;
+            setCurrent(m_units.empty() ? -1 : std::min(cur, int(m_units.size()) - 1), true);
+        }
+        return;
+    }
     m_loading = loading;
     rebuildRows();
     verticalScrollBar()->setValue(0);
     horizontalScrollBar()->setValue(0);
+    m_current = m_units.empty() ? -1 : 0;
+}
+
+void DiffArea::setStaging(int mode)
+{
+    m_staging = mode;
+    viewport()->update();
+}
+
+void DiffArea::buildUnits()
+{
+    m_units.clear();
+    int lastChange = -1, ctx = 0;
+    for (int i = 0; i < int(m_rows.size()); ++i) {
+        const Row &r = m_rows[i];
+        if (r.kind == 0) { // hunk header always starts a new unit
+            lastChange = -1;
+            continue;
+        }
+        if (r.kind == 1) {
+            ++ctx;
+            continue;
+        }
+        if (lastChange < 0 || ctx > 6) m_units.push_back({i, i, {}, {}});
+        Unit &u = m_units.back();
+        u.last = i;
+        for (const DocLine *l : {r.a, r.b}) {
+            if (!l) continue;
+            if (l->t == '-') u.del.insert(l->o);
+            else if (l->t == '+') u.add.insert(l->n);
+        }
+        lastChange = i;
+        ctx = 0;
+    }
+}
+
+int DiffArea::rowAtY(int y) const
+{
+    if (m_rows.empty()) return -1;
+    auto it = std::upper_bound(m_y.begin(), m_y.end() - 1, y + verticalScrollBar()->value());
+    const int r = int(it - m_y.begin()) - 1;
+    return r >= 0 && r < int(m_rows.size()) ? r : -1;
+}
+
+int DiffArea::unitAtRow(int row) const
+{
+    if (row < 0) return -1;
+    for (int u = 0; u < int(m_units.size()); ++u) {
+        // a unit also owns the context right above it, so its button is reachable
+        const int top = u > 0 ? std::max(m_units[u - 1].last + 1, m_units[u].first - 3) : 0;
+        if (row >= top && row <= m_units[u].last) return u;
+    }
+    return -1;
+}
+
+QRect DiffArea::buttonRect(int u) const
+{
+    if (u < 0 || u >= int(m_units.size()) || !m_staging) return {};
+    const QFontMetrics fm(theme::uiFont(11, true));
+    const QString t = m_staging == 1 ? QStringLiteral("Stage hunk") : QStringLiteral("Unstage hunk");
+    const int w = fm.horizontalAdvance(t) + 20, h = 20;
+    // sit on the hunk header when this is the first unit after it, else on the first change
+    int row = m_units[u].first;
+    const int floor = u > 0 ? m_units[u - 1].last : -1;
+    for (int r = row - 1; r > floor; --r)
+        if (m_rows[r].kind == 0) {
+            row = r;
+            break;
+        }
+    const int top = m_y[row] - verticalScrollBar()->value();
+    const int off = m_rows[row].kind == 0 ? (kHunkH - h) / 2 : 1;
+    return QRect(viewport()->width() - w - 12, top + off, w, h);
+}
+
+void DiffArea::setCurrent(int u, bool scroll)
+{
+    m_current = u;
+    if (scroll && u >= 0 && u < int(m_units.size())) {
+        const int y0 = m_y[m_units[u].first], y1 = m_y[m_units[u].last + 1];
+        const int sv = verticalScrollBar()->value(), vh = viewport()->height();
+        const int margin = 3 * m_lh;
+        if (y0 - margin < sv || y1 > sv + vh) // not fully in view: put it near the top
+            verticalScrollBar()->setValue(y1 - y0 + 2 * margin > vh ? y0 - margin : std::max(0, y0 - vh / 3));
+    }
+    viewport()->update();
+}
+
+void DiffArea::applyCurrent()
+{
+    if (!m_staging || m_current < 0 || m_current >= int(m_units.size())) return;
+    const Unit &u = m_units[m_current];
+    emit applyHunk(u.del, u.add);
+}
+
+void DiffArea::keyPressEvent(QKeyEvent *e)
+{
+    if (e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) return QAbstractScrollArea::keyPressEvent(e);
+    switch (e->key()) {
+    case Qt::Key_J:
+    case Qt::Key_K: {
+        if (m_units.empty()) return;
+        const int d = e->key() == Qt::Key_J ? 1 : -1;
+        setCurrent(std::clamp(m_current + d, 0, int(m_units.size()) - 1), true);
+        return;
+    }
+    case Qt::Key_S:
+        if (m_staging == 1) applyCurrent();
+        return;
+    case Qt::Key_U:
+        if (m_staging == 2) applyCurrent();
+        return;
+    default:
+        QAbstractScrollArea::keyPressEvent(e);
+    }
+}
+
+void DiffArea::mousePressEvent(QMouseEvent *e)
+{
+    const QPoint pos = e->position().toPoint();
+    const int u = unitAtRow(rowAtY(pos.y()));
+    if (u >= 0 && buttonRect(u).contains(pos)) {
+        setCurrent(u, false);
+        return applyCurrent();
+    }
+    if (u >= 0) setCurrent(u, false);
+    QAbstractScrollArea::mousePressEvent(e);
+}
+
+void DiffArea::mouseMoveEvent(QMouseEvent *e)
+{
+    const QPoint pos = e->position().toPoint();
+    const int u = m_staging ? unitAtRow(rowAtY(pos.y())) : -1;
+    if (u != m_hoverUnit) {
+        m_hoverUnit = u;
+        viewport()->update();
+    }
+    viewport()->setCursor(u >= 0 && buttonRect(u).contains(pos) ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    QAbstractScrollArea::mouseMoveEvent(e);
+}
+
+void DiffArea::leaveEvent(QEvent *e)
+{
+    m_hoverUnit = -1;
+    viewport()->update();
+    QAbstractScrollArea::leaveEvent(e);
 }
 
 void DiffArea::setSplit(bool s)
@@ -82,6 +245,7 @@ void DiffArea::rebuildRows()
             }
         }
     }
+    buildUnits();
     relayout();
 }
 
@@ -282,6 +446,26 @@ void DiffArea::paintEvent(QPaintEvent *)
         } else {
             paintSide(r.a, 0, vw, r.a->t != '-', true);
         }
+    }
+
+    // current hunk marker and the stage/unstage button
+    if (m_current >= 0 && m_current < int(m_units.size()) && (m_staging || m_units.size() > 1)) {
+        const Unit &u = m_units[m_current];
+        p.fillRect(0, m_y[u.first] - sv, 3, m_y[u.last + 1] - m_y[u.first], theme::accent);
+    }
+    for (int u : {m_current, m_hoverUnit}) {
+        const QRect br = buttonRect(u);
+        if (br.isNull() || br.bottom() < 0 || br.top() > vh) continue;
+        p.setRenderHint(QPainter::Antialiasing);
+        const bool hot = u == m_hoverUnit;
+        const QColor c = m_staging == 1 ? theme::green : theme::red;
+        p.setPen(Qt::NoPen);
+        p.setBrush(hot ? c : QColor(0x27, 0x2b, 0x33, 235));
+        p.drawRoundedRect(QRectF(br).adjusted(0.5, 0.5, -0.5, -0.5), br.height() / 2.0, br.height() / 2.0);
+        p.setFont(theme::uiFont(11, true));
+        p.setPen(hot ? QColor(0x12, 0x14, 0x18) : c);
+        p.drawText(br, Qt::AlignCenter, m_staging == 1 ? QStringLiteral("Stage hunk") : QStringLiteral("Unstage hunk"));
+        p.setRenderHint(QPainter::Antialiasing, false);
     }
 }
 

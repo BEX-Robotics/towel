@@ -1,4 +1,6 @@
 #pragma once
+#include <QSet>
+#include <functional>
 #include "commitmodel.h"
 #include "diffdoc.h"
 #include <QObject>
@@ -62,6 +64,8 @@ public:
     void unstage(const QStringList &paths);
     void stageAll();
     void unstageAll();
+    // stage (staged=false) or unstage (staged=true) only these changed lines of a file
+    void applyLines(const QStringList &paths, bool staged, const QSet<int> &selDel, const QSet<int> &selAdd);
     void commit(const QString &message, bool amend);
     QString headId() const;
     QString headMessage() const;
@@ -83,7 +87,15 @@ signals:
 private:
     explicit Repo(QObject *parent = nullptr);
     void runGit(const QString &label, const QStringList &args, const QByteArray &input = {});
+    struct IndexJob {
+        QStringList args;
+        QByteArray input;
+        // computes args + input on a worker right before running; sets err to fail
+        std::function<void(QStringList &args, QByteArray &input, QString &err)> gen;
+    };
     void indexOp(const QStringList &args, const QByteArray &input);
+    void runIndexJob(const QStringList &args, const QByteArray &input);
+    void failIndexOp(const QString &out);
     void pumpIndexOps();
     void setOp(bool running, const QString &label, const QString &out, bool failed);
 
@@ -104,7 +116,7 @@ private:
     quint64 m_statusGen = 0;
     bool m_indexBusy = false;
     bool m_settling = false; // index op done, waiting for the status reload
-    QList<QPair<QStringList, QByteArray>> m_indexQueue;
+    QList<IndexJob> m_indexQueue;
 
     bool m_opRunning = false, m_opFailed = false, m_opCanForce = false;
     QString m_opLabel, m_opOutput;
