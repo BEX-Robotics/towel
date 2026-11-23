@@ -25,8 +25,8 @@ build libgit2 https://github.com/libgit2/libgit2.git v1.9.1 \
   -DUSE_SSH=OFF -DUSE_HTTPS=OFF -DUSE_NTLMCLIENT=OFF -DUSE_GSSAPI=OFF \
   -DREGEX_BACKEND=builtin -DUSE_BUNDLED_ZLIB=ON -DSTATIC_CRT=OFF
 
-build ecm https://github.com/KDE/extra-cmake-modules.git v6.8.0 \
+build ecm https://github.com/KDE/extra-cmake-modules.git v6.24.0 \
   -DBUILD_TESTING=OFF -DBUILD_HTML_DOCS=OFF -DBUILD_MAN_DOCS=OFF -DBUILD_QTHELP_DOCS=OFF
 
-build syntax-highlighting https://github.com/KDE/syntax-highlighting.git v6.8.0 \
+build syntax-highlighting https://github.com/KDE/syntax-highlighting.git v6.24.0 \
   -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DBUILD_QCH=OFF -DQRC_SYNTAX=ON
