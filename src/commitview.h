@@ -3,6 +3,7 @@
 #include <QAbstractScrollArea>
 
 class CommitModel;
+struct CommitRow;
 struct RefGroup;
 
 // The history: graph | refs + message | author | date, painted directly from
@@ -41,6 +42,7 @@ private:
     int dateWidth() const;
     void paintRow(QPainter &p, int row, int y);
     void paintGraph(QPainter &p, int row, const QRectF &cell);
+    void paintNode(QPainter &p, const CommitRow *r, qreal x, qreal mid);
     qreal paintChip(QPainter &p, const RefGroup &g, const QColor &lane, qreal x, qreal cy, qreal maxW);
 
     CommitModel *m_model;

@@ -39,6 +39,7 @@ struct CommitRow {
     bool merge = false;
     bool wip = false;
     bool hasRefs = false;
+    bool onHead = true; // the current branch contains it; other commits are drawn faint
 
     QString id() const {
         if (wip) return QStringLiteral("WIP");

@@ -26,7 +26,11 @@ struct Lanes {
         git_oid oid{};
         int color = 0;
         bool reserved = false; // held for a commit further down; no line until it is reached
+        bool head = true;      // the line leads down from a commit the current branch contains
     };
+
+    // edge colour byte: palette index, high bit set when the line is off the current branch
+    static quint8 edgeColor(int color, bool head) { return quint8(color | (head ? 0 : 0x80)); }
     std::vector<Slot> s;
     int next = 0;
     int width = 1;
@@ -48,7 +52,7 @@ struct Lanes {
         return -1;
     }
 
-    void place(const git_oid *id, const std::vector<git_oid> &parents, CommitRow &row, std::vector<Edge> &pool) {
+    void place(const git_oid *id, const std::vector<git_oid> &parents, CommitRow &row, std::vector<Edge> &pool, bool onHead) {
         row.edgeStart = uint32_t(pool.size());
         std::vector<int> matches;
         for (size_t i = 0; i < s.size(); ++i)
@@ -66,14 +70,14 @@ struct Lanes {
         for (size_t i = 0; i < s.size(); ++i) {
             if (!s[i].used || s[i].reserved) continue;
             const bool m = git_oid_equal(&s[i].oid, id);
-            pool.push_back({quint16(i), quint16(m ? col : int(i)), quint8(m ? 1 : 0), quint8(s[i].color)});
+            pool.push_back({quint16(i), quint16(m ? col : int(i)), quint8(m ? 1 : 0), edgeColor(s[i].color, s[i].head)});
         }
         for (int m : matches) s[m].used = s[m].reserved = false;
 
         if (!parents.empty()) {
             if (col >= int(s.size())) s.resize(col + 1);
-            s[col] = {true, parents[0], color};
-            pool.push_back({quint16(col), quint16(col), 2, quint8(color)});
+            s[col] = {true, parents[0], color, false, onHead};
+            pool.push_back({quint16(col), quint16(col), 2, edgeColor(color, onHead)});
             for (size_t pi = 1; pi < parents.size(); ++pi) {
                 int j = find(&parents[pi]);
                 if (j >= 0) s[j].reserved = false; // a merge into the kept lane draws its line from here
@@ -81,10 +85,13 @@ struct Lanes {
                 if (j < 0) {
                     j = freeSlot();
                     c = newColor();
-                    s[j] = {true, parents[pi], c};
-                } else
+                    s[j] = {true, parents[pi], c, false, onHead};
+                } else {
                     c = s[j].color;
-                pool.push_back({quint16(col), quint16(j), 2, quint8(c)});
+                    s[j].head = s[j].head || onHead;
+                }
+
+                pool.push_back({quint16(col), quint16(j), 2, edgeColor(c, onHead)});
             }
         }
         while (!s.empty() && !s.back().used) s.pop_back();
@@ -92,9 +99,31 @@ struct Lanes {
         row.edgeCount = uint16_t(pool.size() - row.edgeStart);
         row.col = uint16_t(col);
         row.color = uint8_t(color);
+        row.onHead = onHead;
         width = std::max(width, col + 1);
         for (size_t k = row.edgeStart; k < pool.size(); ++k) width = std::max(width, int(std::max(pool[k].a, pool[k].b)) + 1);
     }
+};
+
+// Which commits the current branch contains. The history walk is topological, so a commit
+// comes after all its children and one pass suffices: a commit is on the branch when one of
+// its children was. On an unborn branch (git checkout --orphan) no commit is on it.
+class HeadSet {
+public:
+    explicit HeadSet(const git_oid *head) {
+        if (head) m_wanted.insert(key(head));
+    }
+
+    bool take(const git_oid *id, const std::vector<git_oid> &parents) {
+        if (!m_wanted.remove(key(id))) return false;
+
+        for (const git_oid &p : parents) m_wanted.insert(key(&p));
+        return true;
+    }
+
+private:
+    static QByteArray key(const git_oid *o) { return QByteArray(reinterpret_cast<const char *>(o->id), 20); }
+    QSet<QByteArray> m_wanted;
 };
 
 int dirtyCount(git_repository *r) {
@@ -342,10 +371,10 @@ LoadResult loadRepo(const QString &start) {
 
         // the current branch (and the WIP row above it) always runs down the
         // leftmost lane, however many newer commits other branches have
-        lanes.s.push_back({true, n > 0 ? zero : headOid, lanes.newColor(), true});
+        lanes.s.push_back({true, n > 0 ? zero : headOid, lanes.newColor(), true, false});
         if (n > 0) {
             CommitRow row = {};
-            lanes.place(&zero, {headOid}, row, res.edges);
+            lanes.place(&zero, {headOid}, row, res.edges, true);
             row.wip = true;
             res.wipCount = n;
             row.time = QDateTime::currentSecsSinceEpoch();
@@ -371,6 +400,7 @@ LoadResult loadRepo(const QString &start) {
     res.rows.reserve(4096);
     res.edges.reserve(4096 * 3);
 
+    HeadSet headSet(headValid ? &headOid : 0);
     GWalk walk;
     if (git_revwalk_new(walk.out(), repo) == 0) {
         git_revwalk_sorting(walk, GIT_SORT_TOPOLOGICAL | GIT_SORT_TIME);
@@ -388,7 +418,8 @@ LoadResult loadRepo(const QString &start) {
 
             CommitRow row = {};
             std::memcpy(row.oid.data(), oid.id, 20);
-            lanes.place(&oid, parents, row, res.edges);
+            const bool onHead = headSet.take(&oid, parents);
+            lanes.place(&oid, parents, row, res.edges, onHead);
             const git_signature *a = git_commit_author(c);
             row.author = authorOf(a);
             row.time = a->when.time;

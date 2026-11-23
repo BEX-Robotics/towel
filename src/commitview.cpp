@@ -13,6 +13,8 @@
 #include <QToolTip>
 
 namespace {
+// How strongly commits and lines off the current branch are drawn (0..1).
+constexpr qreal offHeadAlpha = 0.45;
 
 QString relativeTime(qint64 t) {
     const qint64 d = QDateTime::currentSecsSinceEpoch() - t;
@@ -72,6 +74,7 @@ int CommitView::refsWidth() const {
     const int w = std::max(140, theme::z(160));
     return viewport()->width() > 4 * w ? w : 0;
 }
+
 int CommitView::authorWidth() const { return viewport()->width() > 1000 ? 150 : 0; }
 int CommitView::dateWidth() const { return viewport()->width() > 700 ? 96 : 0; }
 
@@ -175,7 +178,9 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell) {
     const Edge *edges = m_model->edgesOf(r);
     for (int i = 0; i < r->edgeCount; ++i) {
         const Edge &e = edges[i];
-        QPen pen(theme::lane(e.c), 2.0);
+        QColor lc = theme::lane(e.c & 0x7f);
+        if (e.c & 0x80) lc.setAlphaF(offHeadAlpha); // a line off the current branch
+        QPen pen(lc, 2.0);
         pen.setCapStyle(Qt::FlatCap);
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
@@ -195,9 +200,24 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell) {
         }
     }
 
+    paintNode(p, r, X(r->col), mid);
+    p.restore();
+}
+
+// The commit's node at (x, mid): a dashed ring for WIP, a small ring for a merge, else the
+// author's avatar in a ring of the lane color.
+void CommitView::paintNode(QPainter &p, const CommitRow *r, qreal x, qreal mid) {
     const QColor c = theme::lane(r->color);
-    const qreal x = X(r->col);
     const qreal R = nodeSize() / 2.0;
+
+    // the background disc that hides lines meeting at the node is painted before any fading,
+    // or the lines would show through a faded node
+    const qreal disc = r->wip ? R - 1 : r->merge ? 6.5
+                                                 : R + 1.5;
+    p.setPen(Qt::NoPen);
+    p.setBrush(theme::bg);
+    p.drawEllipse(QPointF(x, mid), disc, disc);
+    if (!r->onHead) p.setOpacity(p.opacity() * offHeadAlpha);
     if (r->wip) {
         QPen pen(c, 1.6, Qt::CustomDashLine);
         pen.setDashPattern({2.5, 2.0});
@@ -210,15 +230,11 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell) {
         p.drawEllipse(QPointF(x, mid), 5, 5);
     } else {
         // avatar with a thin lane ring and a gap of background between them
-        p.setPen(Qt::NoPen);
-        p.setBrush(theme::bg);
-        p.drawEllipse(QPointF(x, mid), R + 1.5, R + 1.5);
         p.setPen(QPen(c, 1.6));
         p.setBrush(Qt::NoBrush);
         p.drawEllipse(QPointF(x, mid), R + 0.5, R + 0.5);
         AvatarCache::paint(&p, QRectF(x - R + 2, mid - R + 2, nodeSize() - 4, nodeSize() - 4), m_model->emailOf(r), m_model->authorOf(r), theme::bg, 0);
     }
-    p.restore();
 }
 
 void CommitView::paintRow(QPainter &p, int row, int y) {
@@ -301,6 +317,7 @@ void CommitView::paintRow(QPainter &p, int row, int y) {
     }
     if (!rw && !refs.isEmpty()) x += 4;
 
+    if (!r->onHead) p.setOpacity(p.opacity() * offHeadAlpha); // message, author, date
     const QFont f = theme::uiFont(13);
     const QFontMetrics fm(f);
     const int avail = int(right - x);
