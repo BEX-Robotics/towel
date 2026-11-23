@@ -11,6 +11,11 @@ namespace theme {
 // goes through z(); views relayout on Zoom::changed.
 double zoom();
 inline int z(int px) { return int(px * zoom() + 0.5); }
+// Padding and gaps grow slower than text: at 200% the text doubles but the air
+// around it only grows by sqrt(2), so a bigger zoom shows more, not just emptier, rows.
+int zp(int px);
+// Height of one line of uiFont(px) text at the current zoom.
+int lineHeight(int px);
 inline qreal zf(qreal v) { return v * zoom(); }
 
 void setZoom(double factor); // rescales live widgets too

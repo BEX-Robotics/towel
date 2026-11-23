@@ -19,9 +19,9 @@
 #include <QVBoxLayout>
 
 namespace {
-inline int sideRowHeight() { return theme::z(26); }
+inline int sideRowHeight() { return theme::lineHeight(13) + theme::zp(6); }
 inline int sideHeaderHeight() { return theme::z(30); }
-inline int fileRowHeight() { return theme::z(28); }
+inline int fileRowHeight() { return theme::lineHeight(13) + theme::zp(6); }
 
 void setBg(QWidget *w, const QColor &c) {
     w->setAutoFillBackground(true);
@@ -274,7 +274,7 @@ FileList::FileList(QWidget *parent) : QWidget(parent) {
 void FileList::setFiles(const QVariantList &files) {
     m_files = files;
     m_hover = -1;
-    setFixedHeight(int(m_files.size()) * fileRowHeight() + 20);
+    setFixedHeight(int(m_files.size()) * fileRowHeight() + theme::zp(20));
     update();
 }
 
@@ -290,10 +290,10 @@ void FileList::setAction(const QString &glyph, const QString &tip) {
 }
 
 QRect FileList::actionRect(int row) const {
-    return QRect(width() - 38, row * fileRowHeight() + 3, 24, fileRowHeight() - 6);
+    return QRect(width() - theme::z(38), row * fileRowHeight() + 3, theme::z(24), fileRowHeight() - 6);
 }
 
-QSize FileList::sizeHint() const { return QSize(200, int(m_files.size()) * fileRowHeight() + 20); }
+QSize FileList::sizeHint() const { return QSize(theme::z(200), int(m_files.size()) * fileRowHeight() + theme::zp(20)); }
 
 void FileList::paintEvent(QPaintEvent *ev) {
     QPainter p(this);
@@ -313,7 +313,8 @@ void FileList::paintEvent(QPaintEvent *ev) {
         QColor sc = theme::statusColor(st);
         QColor sbg = sc;
         sbg.setAlphaF(0.18);
-        const QRectF badge(14, y + 5, 18, 18);
+        const int bs = std::min(theme::z(18), fileRowHeight() - 4);
+        const QRectF badge(theme::z(14), y + (fileRowHeight() - bs) / 2.0, bs, bs);
         p.setPen(Qt::NoPen);
         p.setBrush(sbg);
         p.drawRoundedRect(badge, 4, 4);
@@ -322,7 +323,7 @@ void FileList::paintEvent(QPaintEvent *ev) {
         p.drawText(badge, Qt::AlignCenter, st);
 
         // stats on the right (leaving room for the action button)
-        int sx = w - 16 - (m_action.isEmpty() ? 0 : 30);
+        int sx = m_action.isEmpty() ? w - theme::z(16) : actionRect(i).left() - theme::z(8);
         if (!m_action.isEmpty() && i == m_hover) {
             const QRect ar = actionRect(i);
             p.setPen(Qt::NoPen);

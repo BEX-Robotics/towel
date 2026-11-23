@@ -35,7 +35,7 @@ private:
     int rowAt(int y) const;
     int graphWidth() const;
     int m_graphWidthCache = 60;
-    int m_rowHAtZoom = rowHeight(); // graph width used by the last paint
+    int m_rowHAtZoom = rowHeight(); // row height before the last zoom, to keep the top row in place
     int refsWidth() const;          // left column with branch/tag chips; 0 when narrow (chips go inline)
     int authorWidth() const;
     int dateWidth() const;
@@ -46,7 +46,8 @@ private:
     CommitModel *m_model;
     int m_current = -1;
     int m_hover = -1;
-    static int rowHeight() { return theme::z(32); }
-    static int laneWidth() { return theme::z(22); }
-    static int nodeSize() { return theme::z(22); }
+    // row = one line of message text plus padding that grows slower than the text
+    static int rowHeight() { return theme::lineHeight(13) + theme::zp(8); }
+    static int nodeSize() { return std::min(theme::z(20), rowHeight() - 4); }
+    static int laneWidth() { return nodeSize() - theme::zp(2); }
 };

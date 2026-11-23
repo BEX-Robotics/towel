@@ -67,7 +67,11 @@ int CommitView::graphWidth() const {
     return std::min(std::max(lanes, 2) * laneWidth() + 16, 400);
 }
 
-int CommitView::refsWidth() const { return viewport()->width() > 760 ? 176 : 0; }
+// Wide enough for a typical branch chip; only when the message still gets most of the row.
+int CommitView::refsWidth() const {
+    const int w = std::max(140, theme::z(160));
+    return viewport()->width() > 4 * w ? w : 0;
+}
 int CommitView::authorWidth() const { return viewport()->width() > 1000 ? 150 : 0; }
 int CommitView::dateWidth() const { return viewport()->width() > 700 ? 96 : 0; }
 
@@ -123,13 +127,15 @@ void CommitView::paintEvent(QPaintEvent *) {
 qreal CommitView::paintChip(QPainter &p, const RefGroup &g, const QColor &lane, qreal x, qreal cy, qreal maxW) {
     const QFont f = theme::uiFont(12, g.current || g.head);
     const QFontMetricsF fm(f);
+    const qreal h = std::min<qreal>(theme::z(20), rowHeight() - 4), pad = theme::zf(10), iconW = theme::zf(14);
     const int nIcons = (g.tag ? 1 : 0) + (g.local ? 1 : 0) + (g.remote ? 1 : 0) + (g.head ? 1 : 0);
-    const qreal iconsW = nIcons * 14.0;
+    const qreal iconsW = nIcons * iconW;
     const qreal full = std::ceil(fm.horizontalAdvance(g.name)) + 2;
-    const qreal textW = std::min<qreal>(full, maxW - iconsW - 22);
-    if (textW < 24) return 0;
-    const qreal w = 10 + iconsW + (nIcons ? 5 : 0) + textW + 10;
-    const QRectF r(x, cy - 10, w, 20);
+    const qreal gap = nIcons ? theme::zf(5) : 0;
+    const qreal textW = std::min<qreal>(full, maxW - iconsW - gap - 2 * pad);
+    if (textW < fm.horizontalAdvance(QStringLiteral("ab…"))) return 0;
+    const qreal w = pad + iconsW + gap + textW + pad;
+    const QRectF r(x, cy - h / 2, w, h);
 
     const QColor accent = g.tag ? theme::dim : g.head ? theme::yellow
                                                       : lane;
@@ -137,19 +143,20 @@ qreal CommitView::paintChip(QPainter &p, const RefGroup &g, const QColor &lane, 
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(QPen(filled ? accent : withAlpha(accent, 0.75), 1));
     p.setBrush(filled ? accent : withAlpha(accent, 0.12));
-    p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 10, 10);
+    p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), h / 2, h / 2);
 
     const QColor fg = filled ? theme::bg : accent.lighter(125);
-    qreal cx = x + 10;
+    qreal cx = x + pad;
+    const qreal is = theme::zf(13);
     auto icon = [&](theme::Icon i) {
-        theme::paintIcon(&p, i, QRectF(cx - 1, cy - 6.5, 13, 13), fg);
-        cx += 14;
+        theme::paintIcon(&p, i, QRectF(cx - 1, cy - is / 2, is, is), fg);
+        cx += iconW;
     };
     if (g.tag) icon(theme::Icon::Tag);
     if (g.head) icon(theme::Icon::Branch);
     if (g.local) icon(theme::Icon::Laptop);
     if (g.remote) icon(theme::Icon::Cloud);
-    if (nIcons) cx += 5;
+    cx += gap;
     p.setFont(f);
     p.setPen(fg);
     p.drawText(QRectF(cx, r.top(), textW + 1, r.height()), Qt::AlignVCenter,
@@ -248,17 +255,19 @@ void CommitView::paintRow(QPainter &p, int row, int y) {
         }
         const QFont mf = theme::uiFont(11, true);
         const QString more = refs.size() > 1 ? QStringLiteral("+%1").arg(refs.size() - 1) : QString();
-        const int moreW = more.isEmpty() ? 0 : QFontMetrics(mf).horizontalAdvance(more) + 12;
+        const int moreW = more.isEmpty() ? 0 : QFontMetrics(mf).horizontalAdvance(more) + theme::z(12);
         RefGroup g = refs[best];
         if (g.remote && !g.local && g.name.contains(QLatin1Char('/'))) g.name = g.name.section(QLatin1Char('/'), 1); // the cloud icon says "remote"
-        const qreal cw = paintChip(p, g, lane, 10, cy, rw - 22 - moreW);
-        qreal lx = 10 + cw;
+        const int left = theme::z(10);
+        const qreal cw = paintChip(p, g, lane, left, cy, rw - 2 * left - moreW);
+        qreal lx = left + cw;
         if (!more.isEmpty()) {
             p.setRenderHint(QPainter::Antialiasing);
-            const QRectF mr(lx + 4, cy - 9, moreW - 4, 18);
+            const qreal mh = std::min<qreal>(theme::z(18), rowHeight() - 6);
+            const QRectF mr(lx + theme::z(4), cy - mh / 2, moreW - theme::z(4), mh);
             p.setPen(Qt::NoPen);
             p.setBrush(theme::field);
-            p.drawRoundedRect(mr, 9, 9);
+            p.drawRoundedRect(mr, mh / 2, mh / 2);
             p.setFont(mf);
             p.setPen(theme::dim);
             p.drawText(mr, Qt::AlignCenter, more);

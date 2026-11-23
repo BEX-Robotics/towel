@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QFontDatabase>
 #include <QFontMetrics>
+#include <QHash>
 #include <QPainter>
 #include <QPainterPath>
 #include <QWidget>
@@ -49,7 +50,19 @@ Zoom *Zoom::instance() {
 
 int zp(int px) { return int(px * std::sqrt(zoom()) + 0.5); }
 
-int lineHeight(int px) { return QFontMetrics(uiFont(px)).height(); }
+// Cached per pixel size and zoom: views call this for every row they paint.
+int lineHeight(int px) {
+    static QHash<int, int> cache;
+    static double cachedZoom = 0;
+    if (cachedZoom != g_zoom) {
+        cache.clear();
+        cachedZoom = g_zoom;
+    }
+
+    auto it = cache.constFind(px);
+    if (it != cache.constEnd()) return *it;
+    return *cache.insert(px, QFontMetrics(uiFont(px)).height());
+}
 
 namespace {
 // Scales one size of a widget, keeping its unzoomed value in a property so repeated steps
