@@ -632,6 +632,7 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
         b->setToolTip(tip);
         b->setCheckable(checkable);
         b->setFocusPolicy(Qt::NoFocus);
+
         // QToolButton's size hint leaves out the style sheet's padding, so the label was cut to
         // "…"; size it from its text instead, again on every zoom. The path label gives way.
         auto fit = [b] { b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + theme::z(24)); };
@@ -679,6 +680,7 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
     for (auto *b : {m_unified, m_splitBtn}) hl->addWidget(b);
     hl->addSpacing(8);
     hl->addWidget(m_wrapBtn);
+
     // narrow pane or big zoom: the five view options fold into one menu
     m_viewBtn = mk(QStringLiteral("View ▾"), QStringLiteral("Hunks or full file, unified or split, wrap"), false);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
