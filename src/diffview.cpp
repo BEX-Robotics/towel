@@ -5,6 +5,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -12,6 +13,14 @@
 #include <QVBoxLayout>
 
 namespace {
+// A toolbar that never forces its pane wider: when the pane is narrower than
+// its buttons, DiffView::fitToolbar() folds them into a menu instead.
+class ElasticBar : public QWidget {
+public:
+    using QWidget::QWidget;
+    QSize minimumSizeHint() const override { return {0, QWidget::minimumSizeHint().height()}; }
+};
+
 inline int numberWidth() { return theme::z(46); } // one line-number column
 inline int hunkHeight() { return theme::z(26); }
 
@@ -607,7 +616,7 @@ void DiffArea::paintEvent(QPaintEvent *) {
 // ---------- DiffView ----------
 
 DiffView::DiffView(QWidget *parent) : QWidget(parent) {
-    auto *bar = new QWidget(this);
+    auto *bar = new ElasticBar(this);
     bar->setFixedHeight(theme::z(40));
     bar->setAutoFillBackground(true);
     QPalette pal = bar->palette();
@@ -623,7 +632,11 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
         b->setToolTip(tip);
         b->setCheckable(checkable);
         b->setFocusPolicy(Qt::NoFocus);
-        b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred); // the path label gives way, not the buttons
+        // QToolButton's size hint leaves out the style sheet's padding, so the label was cut to
+        // "…"; size it from its text instead, again on every zoom. The path label gives way.
+        auto fit = [b] { b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + theme::z(24)); };
+        fit();
+        connect(theme::Zoom::instance(), &theme::Zoom::changed, b, fit);
 
         return b;
     };
@@ -666,6 +679,28 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
     for (auto *b : {m_unified, m_splitBtn}) hl->addWidget(b);
     hl->addSpacing(8);
     hl->addWidget(m_wrapBtn);
+    // narrow pane or big zoom: the five view options fold into one menu
+    m_viewBtn = mk(QStringLiteral("View ▾"), QStringLiteral("Hunks or full file, unified or split, wrap"), false);
+    m_viewBtn->setPopupMode(QToolButton::InstantPopup);
+    m_viewBtn->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; }"));
+    auto *menu = new QMenu(m_viewBtn);
+    for (QToolButton *b : {m_hunks, m_fullBtn, (QToolButton *)0, m_unified, m_splitBtn, (QToolButton *)0, m_wrapBtn}) {
+        if (!b) {
+            menu->addSeparator();
+            continue;
+        }
+
+        QAction *a = menu->addAction(b->text(), b, &QToolButton::click);
+        a->setCheckable(true);
+        connect(menu, &QMenu::aboutToShow, a, [a, b] {
+            a->setChecked(b->isChecked());
+            a->setEnabled(b->isEnabled());
+        });
+    }
+
+    m_viewBtn->setMenu(menu);
+    m_viewBtn->hide();
+    hl->addWidget(m_viewBtn);
     hl->addSpacing(8);
     auto *prev = mk(QStringLiteral("↑"), QStringLiteral("Previous file (Alt+↑)"), false);
     auto *next = mk(QStringLiteral("↓"), QStringLiteral("Next file (Alt+↓)"), false);
@@ -694,6 +729,22 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
     vl->addWidget(line);
     vl->addWidget(m_area, 1);
     setOptions(false, false, false);
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, &DiffView::fitToolbar);
+}
+
+void DiffView::resizeEvent(QResizeEvent *e) {
+    QWidget::resizeEvent(e);
+    fitToolbar();
+}
+
+void DiffView::fitToolbar() {
+    // what the bar needs with every option button showing, the path at its minimum
+    int need = theme::z(250); // back, status, stats, ↑ ↓, margins
+    for (QToolButton *b : {m_hunks, m_fullBtn, m_unified, m_splitBtn, m_wrapBtn}) need += b->minimumWidth() + theme::z(6);
+    need += m_mode->isVisible() ? m_mode->sizeHint().width() : 0;
+    const bool compact = width() < need;
+    for (QToolButton *b : {m_hunks, m_fullBtn, m_unified, m_splitBtn, m_wrapBtn}) b->setVisible(!compact);
+    m_viewBtn->setVisible(compact);
 }
 
 void DiffView::setOptions(bool full, bool split, bool wrap) {

@@ -103,9 +103,13 @@ signals:
     void stepFile(int delta);
     void optionsChanged(bool full, bool split, bool wrap);
 
+protected:
+    void resizeEvent(QResizeEvent *) override;
+
 private:
+    void fitToolbar();
     DiffArea *m_area;
     QLabel *m_status, *m_path, *m_stats, *m_mode;
-    QToolButton *m_hunks, *m_fullBtn, *m_unified, *m_splitBtn, *m_wrapBtn;
+    QToolButton *m_hunks, *m_fullBtn, *m_unified, *m_splitBtn, *m_wrapBtn, *m_viewBtn;
     bool m_full = false;
 };
