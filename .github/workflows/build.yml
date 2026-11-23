@@ -82,7 +82,8 @@ jobs:
           curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy*.AppImage
           export EXTRA_QT_PLUGINS="svg;wayland-shell-integration;wayland-graphics-integration-client;wayland-decoration-client"
-          export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so"
+          # the Wayland platform plugin is libqwayland.so since Qt 6.10, libqwayland-generic.so before
+          export EXTRA_PLATFORM_PLUGINS=$(basename "$(ls "$QT_ROOT_DIR"/plugins/platforms/libqwayland*.so | head -1)")
           export LINUXDEPLOY_OUTPUT_VERSION=$VER
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
             --desktop-file AppDir/usr/share/applications/towel.desktop \
