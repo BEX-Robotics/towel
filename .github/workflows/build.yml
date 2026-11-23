@@ -1,0 +1,117 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: "6.8.3"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-22.04 }
+          - { name: macos, os: macos-14 }
+          - { name: windows, os: windows-2022 }
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 libfuse2 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libwayland-dev
+
+      - name: macOS packages
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Cache dependencies
+        id: deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ matrix.os }}-qt${{ env.QT_VERSION }}-${{ hashFiles('ci/deps.sh') }}
+
+      - name: Build dependencies
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: ci/deps.sh deps
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PWD/deps" -DTOWEL_STATIC_GIT2=ON -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else echo "VER=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"; fi
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          DESTDIR=$PWD/AppDir cmake --install build
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          export EXTRA_QT_PLUGINS="svg;wayland-shell-integration;wayland-graphics-integration-client;wayland-decoration-client"
+          export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so"
+          export LINUXDEPLOY_OUTPUT_VERSION=$VER
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
+            --desktop-file AppDir/usr/share/applications/towel.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/towel.svg
+          mkdir out && mv Towel*.AppImage "out/Towel-$VER-linux-x86_64.AppImage"
+
+      - name: Package (macOS dmg)
+        if: runner.os == 'macOS'
+        run: |
+          macdeployqt build/towel.app -dmg
+          mkdir out && mv build/towel.dmg "out/Towel-$VER-macos-arm64.dmg"
+
+      - name: Package (Windows zip)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p out Towel
+          cp build/towel.exe Towel/
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw Towel/towel.exe
+          cp LICENSE README.md Towel/
+          7z a "out/Towel-$VER-windows-x64.zip" Towel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: towel-${{ matrix.name }}
+          path: out/*
+
+      - name: Publish to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
