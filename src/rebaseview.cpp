@@ -14,7 +14,7 @@
 #include <QVBoxLayout>
 
 namespace {
-constexpr int kRowH = 40;
+inline int kRowH() { return theme::z(40); }
 
 QString label(const QVariantMap &m)
 {
@@ -39,6 +39,7 @@ QColor color(const QString &label)
 RebaseList::RebaseList(QWidget *parent) : QAbstractScrollArea(parent)
 {
     setFrameShape(QFrame::NoFrame);
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, &RebaseList::relayout);
     setFocusPolicy(Qt::StrongFocus);
     viewport()->setMouseTracking(true);
     connect(AvatarCache::instance(), &AvatarCache::ready, viewport(), qOverload<>(&QWidget::update));
@@ -63,8 +64,8 @@ void RebaseList::setItems(const QVariantList &items)
 void RebaseList::relayout()
 {
     verticalScrollBar()->setPageStep(viewport()->height());
-    verticalScrollBar()->setSingleStep(kRowH);
-    verticalScrollBar()->setRange(0, std::max(0, int(m_items.size()) * kRowH - viewport()->height()));
+    verticalScrollBar()->setSingleStep(kRowH());
+    verticalScrollBar()->setRange(0, std::max(0, int(m_items.size()) * kRowH() - viewport()->height()));
     viewport()->update();
 }
 
@@ -82,20 +83,20 @@ void RebaseList::changed()
 
 int RebaseList::rowAt(int y) const
 {
-    const int r = (y + verticalScrollBar()->value()) / kRowH;
+    const int r = (y + verticalScrollBar()->value()) / kRowH();
     return r >= 0 && r < int(m_items.size()) ? r : -1;
 }
 
 QRect RebaseList::pillRect(int row) const
 {
-    return QRect(36, row * kRowH - verticalScrollBar()->value() + (kRowH - 22) / 2, 70, 22);
+    return QRect(36, row * kRowH() - verticalScrollBar()->value() + (kRowH() - 22) / 2, 70, 22);
 }
 
 void RebaseList::ensureVisible(int row)
 {
-    const int y = row * kRowH, sv = verticalScrollBar()->value(), vh = viewport()->height();
+    const int y = row * kRowH(), sv = verticalScrollBar()->value(), vh = viewport()->height();
     if (y < sv) verticalScrollBar()->setValue(y);
-    else if (y + kRowH > sv + vh) verticalScrollBar()->setValue(y + kRowH - vh);
+    else if (y + kRowH() > sv + vh) verticalScrollBar()->setValue(y + kRowH() - vh);
 }
 
 void RebaseList::setCurrent(int i)
@@ -191,10 +192,10 @@ void RebaseList::mouseMoveEvent(QMouseEvent *e)
     viewport()->setCursor(Qt::ClosedHandCursor);
     m_dragY = pos.y();
     const int vh = viewport()->height();
-    if (pos.y() < 10) verticalScrollBar()->setValue(verticalScrollBar()->value() - kRowH / 2);
-    else if (pos.y() > vh - 10) verticalScrollBar()->setValue(verticalScrollBar()->value() + kRowH / 2);
+    if (pos.y() < 10) verticalScrollBar()->setValue(verticalScrollBar()->value() - kRowH() / 2);
+    else if (pos.y() > vh - 10) verticalScrollBar()->setValue(verticalScrollBar()->value() + kRowH() / 2);
     // move the dragged row as soon as the pointer crosses into another row
-    const int target = std::clamp((m_dragY + verticalScrollBar()->value()) / kRowH, 0, int(m_items.size()) - 1);
+    const int target = std::clamp((m_dragY + verticalScrollBar()->value()) / kRowH(), 0, int(m_items.size()) - 1);
     if (target != m_drag) {
         m_items.move(m_drag, target);
         m_drag = target;
@@ -219,24 +220,24 @@ void RebaseList::paintEvent(QPaintEvent *)
     const int vw = viewport()->width(), vh = viewport()->height(), sv = verticalScrollBar()->value();
     p.fillRect(0, 0, vw, vh, theme::graphBg);
     const QFont ui = theme::uiFont(13), small = theme::uiFont(11, true), mono = theme::monoFont(12);
-    const int first = sv / kRowH;
+    const int first = sv / kRowH();
     for (int i = first; i < m_items.size(); ++i) {
-        const int y = i * kRowH - sv;
+        const int y = i * kRowH() - sv;
         if (y > vh) break;
         const QVariantMap m = m_items[i].toMap();
         const QString a = m.value("action").toString(), lab = label(m);
         const bool folded = a == QLatin1String("squash") || a == QLatin1String("fixup"), drop = a == QLatin1String("drop");
-        const QRect row(0, y, vw, kRowH);
+        const QRect row(0, y, vw, kRowH());
         if (i == m_cur) {
             p.fillRect(row, m_dragging ? theme::field : theme::selection);
-            p.fillRect(0, y, 3, kRowH, theme::accent);
+            p.fillRect(0, y, 3, kRowH(), theme::accent);
         }
-        p.fillRect(0, y + kRowH - 1, vw, 1, theme::border);
+        p.fillRect(0, y + kRowH() - 1, vw, 1, theme::border);
         // grip
         p.setPen(Qt::NoPen);
         p.setBrush(theme::faint);
         for (int dx : {0, 5})
-            for (int dy : {-5, 0, 5}) p.drawEllipse(QPointF(16 + dx, y + kRowH / 2.0 + dy), 1.4, 1.4);
+            for (int dy : {-5, 0, 5}) p.drawEllipse(QPointF(16 + dx, y + kRowH() / 2.0 + dy), 1.4, 1.4);
         // action pill
         p.setRenderHint(QPainter::Antialiasing);
         const QRect pr = pillRect(i);
@@ -253,13 +254,13 @@ void RebaseList::paintEvent(QPaintEvent *)
         p.setRenderHint(QPainter::Antialiasing, false);
         p.setFont(mono);
         p.setPen(theme::faint);
-        p.drawText(QRect(ax + 28, y, 70, kRowH), Qt::AlignVCenter, m.value("id").toString().left(7));
+        p.drawText(QRect(ax + 28, y, 70, kRowH()), Qt::AlignVCenter, m.value("id").toString().left(7));
         // summary; folded rows are indented with an arrow into the commit below
         int tx = pr.right() + 14;
         if (folded) {
             p.setPen(c);
             p.setFont(ui);
-            p.drawText(QRect(tx, y, 20, kRowH), Qt::AlignVCenter, QStringLiteral("↓"));
+            p.drawText(QRect(tx, y, 20, kRowH()), Qt::AlignVCenter, QStringLiteral("↓"));
             tx += 20;
         }
         QFont f = ui;
@@ -267,7 +268,7 @@ void RebaseList::paintEvent(QPaintEvent *)
         p.setFont(f);
         p.setPen(drop ? theme::faint : a == QLatin1String("fixup") ? theme::dim : theme::text);
         const QString summary = m.value("message").toString().section(QLatin1Char('\n'), 0, 0);
-        p.drawText(QRect(tx, y, ax - tx - 12, kRowH), Qt::AlignVCenter, QFontMetrics(f).elidedText(summary, Qt::ElideRight, ax - tx - 12));
+        p.drawText(QRect(tx, y, ax - tx - 12, kRowH()), Qt::AlignVCenter, QFontMetrics(f).elidedText(summary, Qt::ElideRight, ax - tx - 12));
     }
 }
 
@@ -276,7 +277,7 @@ void RebaseList::paintEvent(QPaintEvent *)
 RebaseView::RebaseView(QWidget *parent) : QWidget(parent)
 {
     auto *bar = new QWidget(this);
-    bar->setFixedHeight(44);
+    bar->setFixedHeight(theme::z(44));
     bar->setAutoFillBackground(true);
     QPalette pal = bar->palette();
     pal.setColor(QPalette::Window, theme::panel);
@@ -315,7 +316,7 @@ RebaseView::RebaseView(QWidget *parent) : QWidget(parent)
     m_msgHint->setPalette(hp);
     m_msg = new QPlainTextEdit(bottom);
     m_msg->setFont(theme::uiFont(13));
-    m_msg->setFixedHeight(120);
+    m_msg->setFixedHeight(theme::z(120));
     m_msg->setTabChangesFocus(true);
     bl->addWidget(m_summary);
     bl->addWidget(m_msgHint);

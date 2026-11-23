@@ -1,11 +1,27 @@
 #pragma once
 #include <QColor>
 #include <QFont>
+#include <QObject>
 
 class QPainter;
 class QRectF;
 
 namespace theme {
+// UI zoom (Ctrl+scroll, Ctrl+= / Ctrl+-, Ctrl+0). Every font and fixed size
+// goes through z(); views relayout on Zoom::changed.
+double zoom();
+inline int z(int px) { return int(px * zoom() + 0.5); }
+inline qreal zf(qreal v) { return v * zoom(); }
+void setZoom(double factor); // rescales live widgets too
+class Zoom : public QObject
+{
+    Q_OBJECT
+public:
+    static Zoom *instance();
+signals:
+    void changed();
+};
+
 inline const QColor bg{0x1b, 0x1d, 0x23};
 inline const QColor graphBg{0x17, 0x19, 0x1e};
 inline const QColor panel{0x21, 0x24, 0x2b};

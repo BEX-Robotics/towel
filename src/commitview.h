@@ -1,4 +1,5 @@
 #pragma once
+#include "theme.h"
 #include <QAbstractScrollArea>
 
 class CommitModel;
@@ -34,7 +35,8 @@ private:
     void relayout();
     int rowAt(int y) const;
     int graphWidth() const;
-    int m_gw = 60; // graph width used by the last paint
+    int m_gw = 60;
+    int m_rowHAtZoom = kRowH(); // graph width used by the last paint
     int refsWidth() const; // left column with branch/tag chips; 0 when narrow (chips go inline)
     int authorWidth() const;
     int dateWidth() const;
@@ -45,7 +47,7 @@ private:
     CommitModel *m_model;
     int m_current = -1;
     int m_hover = -1;
-    static constexpr int kRowH = 32;
-    static constexpr int kLaneW = 22;
-    static constexpr int kNode = 22;
+    static int kRowH() { return theme::z(32); }
+    static int kLaneW() { return theme::z(22); }
+    static int kNode() { return theme::z(22); }
 };

@@ -91,7 +91,7 @@ CommitPanel::CommitPanel(QWidget *parent) : QWidget(parent)
     m_summary->setPlaceholderText(QStringLiteral("Summary"));
     m_summary->setFont(theme::uiFont(13, true));
     m_counter = label(editor, 11, false, theme::faint);
-    m_counter->setMinimumWidth(26);
+    m_counter->setMinimumWidth(theme::z(26));
     m_counter->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     sumRow->addWidget(m_summary, 1);
     sumRow->addWidget(m_counter);
@@ -99,7 +99,7 @@ CommitPanel::CommitPanel(QWidget *parent) : QWidget(parent)
     m_body = new QPlainTextEdit(editor);
     m_body->setPlaceholderText(QStringLiteral("Description (optional)"));
     m_body->setFont(theme::uiFont(13));
-    m_body->setFixedHeight(110);
+    m_body->setFixedHeight(theme::z(110));
     m_body->setTabChangesFocus(true);
     ev->addWidget(m_body);
     m_amendWarn = label(editor, 11, false, theme::yellow);

@@ -12,8 +12,8 @@
 #include <QVBoxLayout>
 
 namespace {
-constexpr int kNumW = 46;      // one line-number column
-constexpr int kHunkH = 26;
+inline int kNumW() { return theme::z(46); }      // one line-number column
+inline int kHunkH() { return theme::z(26); }
 constexpr int kPad = 2;        // vertical padding per line row
 }
 
@@ -21,15 +21,22 @@ DiffArea::DiffArea(QWidget *parent) : QAbstractScrollArea(parent)
 {
     setFrameShape(QFrame::NoFrame);
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
-    m_font = theme::monoFont(13);
-    m_bold = m_font;
-    m_bold.setBold(true);
-    m_italic = m_font;
-    m_italic.setItalic(true);
-    const QFontMetricsF fm(m_font);
-    m_cw = fm.horizontalAdvance(QLatin1Char('M'));
-    m_lh = int(std::ceil(fm.height()));
-    verticalScrollBar()->setSingleStep(m_lh * 3);
+    auto fonts = [this] {
+        m_font = theme::monoFont(13);
+        m_bold = m_font;
+        m_bold.setBold(true);
+        m_italic = m_font;
+        m_italic.setItalic(true);
+        const QFontMetricsF fm(m_font);
+        m_cw = fm.horizontalAdvance(QLatin1Char('M'));
+        m_lh = int(std::ceil(fm.height()));
+        verticalScrollBar()->setSingleStep(m_lh * 3);
+    };
+    fonts();
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, [this, fonts] {
+        fonts();
+        relayout();
+    });
     setFocusPolicy(Qt::StrongFocus);
     viewport()->setMouseTracking(true);
 }
@@ -128,7 +135,7 @@ QRect DiffArea::buttonRect(int u) const
             break;
         }
     const int top = m_y[row] - verticalScrollBar()->value();
-    const int off = m_rows[row].kind == 0 ? (kHunkH - h) / 2 : 1;
+    const int off = m_rows[row].kind == 0 ? (kHunkH() - h) / 2 : 1;
     return QRect(viewport()->width() - w - 12, top + off, w, h);
 }
 
@@ -252,7 +259,7 @@ void DiffArea::mousePressEvent(QMouseEvent *e)
     }
     if (u >= 0) setCurrent(u, false);
     // line selection: press in the gutter of the unified view
-    const bool inGutter = m_staging && !m_split && pos.x() < 2 * kNumW + 20;
+    const bool inGutter = m_staging && !m_split && pos.x() < 2 * kNumW() + 20;
     if (e->button() == Qt::LeftButton && inGutter && row >= 0 && m_rows[row].kind == 2) {
         const bool shift = e->modifiers() & Qt::ShiftModifier, ctrl = e->modifiers() & Qt::ControlModifier;
         if (shift && m_selAnchor >= 0) {
@@ -299,7 +306,7 @@ void DiffArea::mouseMoveEvent(QMouseEvent *e)
         m_hoverChip = chip;
         viewport()->update();
     }
-    const bool gutter = m_staging && !m_split && pos.x() < 2 * kNumW + 20;
+    const bool gutter = m_staging && !m_split && pos.x() < 2 * kNumW() + 20;
     viewport()->setCursor(chip || (u >= 0 && buttonRect(u).contains(pos)) ? Qt::PointingHandCursor : Qt::ArrowCursor);
     viewport()->setToolTip(gutter ? QStringLiteral("Click or drag to select lines · Ctrl toggles · Shift extends") : QString());
     QAbstractScrollArea::mouseMoveEvent(e);
@@ -389,15 +396,15 @@ void DiffArea::relayout()
 {
     const int vw = viewport()->width();
     const bool wrapping = m_wrap || m_split;
-    if (m_split) m_cols = std::max(10, int((vw / 2 - kNumW - 16) / m_cw));
-    else m_cols = std::max(10, int((vw - 2 * kNumW - 34) / m_cw));
+    if (m_split) m_cols = std::max(10, int((vw / 2 - kNumW() - 16) / m_cw));
+    else m_cols = std::max(10, int((vw - 2 * kNumW() - 34) / m_cw));
 
     m_y.assign(m_rows.size() + 1, 0);
     int y = 0;
     for (size_t i = 0; i < m_rows.size(); ++i) {
         m_y[i] = y;
         const Row &r = m_rows[i];
-        if (r.kind == 0) y += kHunkH;
+        if (r.kind == 0) y += kHunkH();
         else if (m_split) y += std::max(visualLines(r.a, m_cols), visualLines(r.b, m_cols)) * m_lh + kPad;
         else y += visualLines(r.a, m_cols) * m_lh + kPad;
     }
@@ -406,7 +413,7 @@ void DiffArea::relayout()
     const int vh = viewport()->height();
     verticalScrollBar()->setPageStep(vh);
     verticalScrollBar()->setRange(0, std::max(0, y - vh));
-    const int contentW = (wrapping || !m_doc) ? vw : int(2 * kNumW + 34 + m_doc->maxCols * m_cw + 40);
+    const int contentW = (wrapping || !m_doc) ? vw : int(2 * kNumW() + 34 + m_doc->maxCols * m_cw + 40);
     horizontalScrollBar()->setPageStep(vw);
     horizontalScrollBar()->setRange(0, std::max(0, contentW - vw));
     viewport()->update();
@@ -509,23 +516,23 @@ void DiffArea::paintEvent(QPaintEvent *)
             p.fillRect(0, top, vw, h, theme::hunkBg);
             p.setFont(theme::monoFont(12));
             p.setPen(QColor(0x7f, 0x9c, 0xc4));
-            p.drawText(QRect((m_split ? kNumW : 2 * kNumW) + 12 - (m_split || m_wrap ? 0 : sh), top, vw * 4, h), Qt::AlignVCenter, *r.header);
+            p.drawText(QRect((m_split ? kNumW() : 2 * kNumW()) + 12 - (m_split || m_wrap ? 0 : sh), top, vw * 4, h), Qt::AlignVCenter, *r.header);
             continue;
         }
         auto paintSide = [&](const DocLine *l, int x0, int width, bool newSide, bool numbersBoth) {
             const char t = l ? l->t : 0;
             p.fillRect(x0, top, width, h, l ? bgFor(t) : theme::filler);
-            const int gw = numbersBoth ? 2 * kNumW : kNumW;
+            const int gw = numbersBoth ? 2 * kNumW() : kNumW();
             p.fillRect(x0, top, gw, h, l ? gutterFor(t) : theme::filler);
             if (!l) return;
             p.setFont(numFont);
             p.setPen(theme::faint);
             if (numbersBoth) {
-                if (l->o >= 0) p.drawText(QRect(x0, top + 1, kNumW - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->o));
-                if (l->n >= 0) p.drawText(QRect(x0 + kNumW, top + 1, kNumW - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->n));
+                if (l->o >= 0) p.drawText(QRect(x0, top + 1, kNumW() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->o));
+                if (l->n >= 0) p.drawText(QRect(x0 + kNumW(), top + 1, kNumW() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->n));
             } else {
                 const int no = newSide ? l->n : l->o;
-                if (no >= 0) p.drawText(QRect(x0, top + 1, kNumW - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(no));
+                if (no >= 0) p.drawText(QRect(x0, top + 1, kNumW() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(no));
             }
             int textX = x0 + gw + 8;
             if (numbersBoth) {
@@ -564,8 +571,8 @@ void DiffArea::paintEvent(QPaintEvent *)
         for (int r : m_sel) {
             const int top = m_y[r] - sv, h = m_y[r + 1] - m_y[r];
             if (top + h < 0 || top > vh) continue;
-            p.fillRect(0, top, 2 * kNumW + 18, h, QColor(theme::accent.red(), theme::accent.green(), theme::accent.blue(), 70));
-            p.fillRect(2 * kNumW + 16, top, 2, h, theme::accent);
+            p.fillRect(0, top, 2 * kNumW() + 18, h, QColor(theme::accent.red(), theme::accent.green(), theme::accent.blue(), 70));
+            p.fillRect(2 * kNumW() + 16, top, 2, h, theme::accent);
         }
 
     // current hunk marker and the stage/unstage button
@@ -605,7 +612,7 @@ void DiffArea::paintEvent(QPaintEvent *)
 DiffView::DiffView(QWidget *parent) : QWidget(parent)
 {
     auto *bar = new QWidget(this);
-    bar->setFixedHeight(40);
+    bar->setFixedHeight(theme::z(40));
     bar->setAutoFillBackground(true);
     QPalette pal = bar->palette();
     pal.setColor(QPalette::Window, theme::panel);
@@ -620,22 +627,25 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent)
         b->setToolTip(tip);
         b->setCheckable(checkable);
         b->setFocusPolicy(Qt::NoFocus);
+        b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred); // the path label gives way, not the buttons
         return b;
     };
     auto *back = mk(QStringLiteral("←"), QStringLiteral("Back to graph (Esc)"), false);
     connect(back, &QToolButton::clicked, this, &DiffView::closeRequested);
     hl->addWidget(back);
     m_mode = new QLabel(bar);
-    m_mode->setStyleSheet(QStringLiteral("background:#272b33; color:#8d94a1; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:bold;"));
+    m_mode->setStyleSheet(QStringLiteral("background:#272b33; color:#8d94a1; border-radius:4px; padding:2px 8px;"));
+    m_mode->setFont(theme::uiFont(11, true));
     m_mode->hide();
     hl->addWidget(m_mode);
     m_status = new QLabel(bar);
-    m_status->setFixedSize(20, 20);
+    m_status->setFixedSize(theme::z(20), theme::z(20));
+    m_status->setFont(theme::uiFont(11, true));
     m_status->setAlignment(Qt::AlignCenter);
     hl->addWidget(m_status);
     m_path = new QLabel(bar);
     m_path->setTextFormat(Qt::RichText);
-    m_path->setMinimumWidth(50);
+    m_path->setMinimumWidth(theme::z(50));
     m_path->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     hl->addWidget(m_path, 1);
     m_stats = new QLabel(bar);
@@ -682,7 +692,7 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent)
     vl->setSpacing(0);
     vl->addWidget(bar);
     auto *line = new QWidget(this);
-    line->setFixedHeight(1);
+    line->setFixedHeight(theme::z(1));
     line->setStyleSheet(QStringLiteral("background:#2b2f37"));
     vl->addWidget(line);
     vl->addWidget(m_area, 1);
@@ -709,7 +719,7 @@ void DiffView::setDoc(const DiffDoc *doc, bool loading)
     const DiffData &m = doc->meta;
     const QColor sc = theme::statusColor(m.status);
     m_status->setText(m.status);
-    m_status->setStyleSheet(QStringLiteral("background: rgba(%1,%2,%3,46); color: %4; border-radius: 4px; font-weight: bold; font-size: 11px;")
+    m_status->setStyleSheet(QStringLiteral("background: rgba(%1,%2,%3,46); color: %4; border-radius: 4px;")
                                 .arg(sc.red()).arg(sc.green()).arg(sc.blue()).arg(sc.name()));
     const int slash = m.path.lastIndexOf(QLatin1Char('/'));
     QString html = QStringLiteral("<span style='color:#7c8390'>%1</span><b>%2</b>")

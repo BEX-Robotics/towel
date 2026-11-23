@@ -31,6 +31,9 @@
 #include <QStackedWidget>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <cmath>
+#include <QToolTip>
+#include <QWheelEvent>
 
 namespace {
 
@@ -127,9 +130,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     m_split->setHandleWidth(1);
     m_split->setChildrenCollapsible(false);
     m_sidebar = new Sidebar(m_split);
-    m_sidebar->setMinimumWidth(150);
+    m_sidebar->setMinimumWidth(theme::z(150));
     m_center = new QStackedWidget(m_split);
-    m_center->setMinimumWidth(400);
+    m_center->setMinimumWidth(theme::z(400));
     m_commits = new CommitView(m_repo->commits(), m_center);
     m_diff = new DiffView(m_center);
     m_empty = new QWidget(m_center);
@@ -167,7 +170,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     });
     m_center->setCurrentWidget(m_empty);
     m_right = new QStackedWidget(m_split);
-    m_right->setMinimumWidth(260);
+    m_right->setMinimumWidth(theme::z(260));
     m_details = new DetailsPanel(m_right);
     m_commitPanel = new CommitPanel(m_right);
     m_right->addWidget(m_details);
@@ -316,6 +319,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     // shortcuts
     auto sc = [this](const QKeySequence &k, auto fn) { connect(new QShortcut(k, this), &QShortcut::activated, this, fn); };
     sc(QKeySequence::Undo, [this] { m_repo->undo(); });
+    // zoom, for anyone who wants it bigger: Ctrl+scroll, Ctrl+= / Ctrl+-, Ctrl+0
+    sc(QKeySequence::ZoomIn, [this] { zoomBy(1); });
+    sc(QKeySequence(QStringLiteral("Ctrl+=")), [this] { zoomBy(1); });
+    sc(QKeySequence::ZoomOut, [this] { zoomBy(-1); });
+    sc(QKeySequence(QStringLiteral("Ctrl+0")), [this] { zoomBy(0); });
+    qApp->installEventFilter(this);
     sc(QKeySequence::Redo, [this] { m_repo->redo(); });
     sc(QKeySequence(QStringLiteral("Ctrl+F")), [this] { m_search->setFocus(); m_search->selectAll(); });
     sc(QKeySequence(QStringLiteral("Ctrl+O")), [this] { openDialog(); });
@@ -363,7 +372,7 @@ void MainWindow::closeEvent(QCloseEvent *e)
 QWidget *MainWindow::buildTopBar()
 {
     auto *bar = new QWidget(this);
-    bar->setFixedHeight(46);
+    bar->setFixedHeight(theme::z(46));
     setBg(bar, theme::topbar);
     auto *h = new QHBoxLayout(bar);
     h->setContentsMargins(12, 0, 12, 0);
@@ -397,12 +406,12 @@ QWidget *MainWindow::buildTopBar()
 
     m_search = new QLineEdit(bar);
     m_search->setPlaceholderText(QStringLiteral("⌕  Search message, author, SHA, branch   ·   Ctrl+F"));
-    m_search->setFixedWidth(440);
+    m_search->setFixedWidth(theme::z(440));
     m_search->setClearButtonEnabled(true);
     h->addWidget(m_search);
     m_hitLabel = new QLabel(bar);
     m_hitLabel->setFont(theme::uiFont(12));
-    m_hitLabel->setMinimumWidth(70);
+    m_hitLabel->setMinimumWidth(theme::z(70));
     m_hitLabel->hide();
     h->addWidget(m_hitLabel);
     auto *debounce = new QTimer(this);
@@ -462,7 +471,7 @@ QWidget *MainWindow::buildStatusStrip()
     m_opLog = new QPlainTextEdit(m_strip);
     m_opLog->setReadOnly(true);
     m_opLog->setFont(theme::monoFont(12));
-    m_opLog->setFixedHeight(140);
+    m_opLog->setFixedHeight(theme::z(140));
     m_opLog->hide();
     v->addWidget(m_opLog);
     return m_strip;
@@ -766,6 +775,32 @@ void MainWindow::refMenu(const QVariantMap &e, const QPoint &pos)
     menu.exec(pos);
 }
 
+void MainWindow::zoomBy(int steps)
+{
+    // 10% steps on a log scale, so in and out are symmetric; 0 resets
+    const double z = steps == 0 ? 1.0 : theme::zoom() * std::pow(1.1, steps);
+    theme::setZoom(std::abs(z - 1.0) < 0.03 ? 1.0 : z);
+    QSettings().setValue("zoom", theme::zoom());
+    QToolTip::showText(mapToGlobal(rect().center()), QStringLiteral("Zoom %1%").arg(qRound(theme::zoom() * 100)), this, {}, 1200);
+}
+
+bool MainWindow::eventFilter(QObject *o, QEvent *e)
+{
+    if (e->type() == QEvent::Wheel) {
+        auto *we = static_cast<QWheelEvent *>(e);
+        if (we->modifiers() & Qt::ControlModifier) {
+            m_zoomWheel += we->angleDelta().y();
+            const int steps = m_zoomWheel / 120; // one notch = one step; touchpads accumulate
+            if (steps) {
+                m_zoomWheel -= steps * 120;
+                zoomBy(steps);
+            }
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(o, e);
+}
+
 void MainWindow::updateUndo()
 {
     const QString u = m_repo->undoLabel(), r = m_repo->redoLabel();
@@ -894,6 +929,7 @@ void MainWindow::runDemo()
             else if (step.startsWith(QLatin1String("commit:"))) m_repo->commit(arg, false);
             else if (step.startsWith(QLatin1String("rows:"))) // rows:4-9 selects diff rows (header rows count)
                 m_diff->area()->selectRows(arg.section(QLatin1Char('-'), 0, 0).toInt(), arg.section(QLatin1Char('-'), 1).toInt());
+            else if (step.startsWith(QLatin1String("zoom:"))) zoomBy(arg.toInt()); // zoom:3 = three Ctrl+scroll notches
             else if (step.startsWith(QLatin1String("key:"))) // e.g. key:jjs: keystrokes into the diff
                 for (QChar c : arg) {
                     const bool mv = c == QLatin1Char('<') || c == QLatin1Char('>'); // Alt+Up / Alt+Down

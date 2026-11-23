@@ -66,6 +66,7 @@ int main(int argc, char *argv[])
         git_buf_dispose(&found);
     }
 
+    theme::setZoom(QSettings().value("zoom", 1.0).toDouble());
     MainWindow w;
     w.show();
     Repo::instance()->open(start);

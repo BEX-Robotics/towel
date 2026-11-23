@@ -26,6 +26,7 @@ public:
 protected:
     void closeEvent(QCloseEvent *) override;
     bool event(QEvent *) override;
+    bool eventFilter(QObject *, QEvent *) override;
 
 private:
     QWidget *buildTopBar();
@@ -42,6 +43,7 @@ private:
     void editMessage();
     void updateBranchChip();
     void updateUndo();
+    void zoomBy(int steps);
     void commitMenu(int row, const QPoint &pos);
     void refMenu(const QVariantMap &entry, const QPoint &pos);
     void checkout(const QVariantMap &entry);
@@ -81,5 +83,6 @@ private:
     bool m_jumpOnHits = false;
     int m_hitPos = -1;
     int m_idleTicks = 0;
+    int m_zoomWheel = 0;
     bool m_full = false, m_splitDiff = false, m_wrap = false;
 };

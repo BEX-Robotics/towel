@@ -19,9 +19,9 @@
 #include <QVBoxLayout>
 
 namespace {
-constexpr int kSideRowH = 26;
-constexpr int kSideHeadH = 30;
-constexpr int kFileRowH = 28;
+inline int kSideRowH() { return theme::z(26); }
+inline int kSideHeadH() { return theme::z(30); }
+inline int kFileRowH() { return theme::z(28); }
 
 void setBg(QWidget *w, const QColor &c)
 {
@@ -70,6 +70,7 @@ void AvatarWidget::paintEvent(QPaintEvent *)
 SideList::SideList(QWidget *parent) : QAbstractScrollArea(parent)
 {
     setFrameShape(QFrame::NoFrame);
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, &SideList::rebuild);
     viewport()->setMouseTracking(true);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 }
@@ -126,7 +127,7 @@ void SideList::rebuild()
     add(QStringLiteral("tag"), QStringLiteral("TAGS"), m_tags, QString());
     add(QStringLiteral("stash"), QStringLiteral("STASHES"), m_stashes, QString());
     int h = 0;
-    for (const auto &e : m_entries) h += e.header ? kSideHeadH : kSideRowH;
+    for (const auto &e : m_entries) h += e.header ? kSideHeadH() : kSideRowH();
     verticalScrollBar()->setPageStep(viewport()->height());
     verticalScrollBar()->setRange(0, std::max(0, h - viewport()->height()));
     viewport()->update();
@@ -143,7 +144,7 @@ int SideList::rowAt(int y) const
     y += verticalScrollBar()->value();
     int top = 0;
     for (int i = 0; i < int(m_entries.size()); ++i) {
-        const int h = m_entries[i].header ? kSideHeadH : kSideRowH;
+        const int h = m_entries[i].header ? kSideHeadH() : kSideRowH();
         if (y >= top && y < top + h) return i;
         top += h;
     }
@@ -158,7 +159,7 @@ void SideList::paintEvent(QPaintEvent *)
     int y = -verticalScrollBar()->value();
     for (int i = 0; i < int(m_entries.size()); ++i) {
         const Entry &e = m_entries[i];
-        const int h = e.header ? kSideHeadH : kSideRowH;
+        const int h = e.header ? kSideHeadH() : kSideRowH();
         if (y + h < 0) { y += h; continue; }
         if (y > viewport()->height()) break;
         if (e.header) {
@@ -278,6 +279,10 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
 
 FileList::FileList(QWidget *parent) : QWidget(parent)
 {
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, [this] {
+        updateGeometry();
+        update();
+    });
     setMouseTracking(true);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 }
@@ -286,7 +291,7 @@ void FileList::setFiles(const QVariantList &files)
 {
     m_files = files;
     m_hover = -1;
-    setFixedHeight(int(m_files.size()) * kFileRowH + 20);
+    setFixedHeight(int(m_files.size()) * kFileRowH() + 20);
     update();
 }
 
@@ -305,24 +310,24 @@ void FileList::setAction(const QString &glyph, const QString &tip)
 
 QRect FileList::actionRect(int row) const
 {
-    return QRect(width() - 38, row * kFileRowH + 3, 24, kFileRowH - 6);
+    return QRect(width() - 38, row * kFileRowH() + 3, 24, kFileRowH() - 6);
 }
 
-QSize FileList::sizeHint() const { return QSize(200, int(m_files.size()) * kFileRowH + 20); }
+QSize FileList::sizeHint() const { return QSize(200, int(m_files.size()) * kFileRowH() + 20); }
 
 void FileList::paintEvent(QPaintEvent *ev)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     const int w = width();
-    const int first = std::max(0, ev->rect().top() / kFileRowH);
-    const int last = std::min(int(m_files.size()) - 1, ev->rect().bottom() / kFileRowH);
+    const int first = std::max(0, ev->rect().top() / kFileRowH());
+    const int last = std::min(int(m_files.size()) - 1, ev->rect().bottom() / kFileRowH());
     const QFont nameF = theme::uiFont(13), mono = theme::monoFont(12), badgeF = theme::uiFont(11, true);
     for (int i = first; i <= last; ++i) {
         const QVariantMap f = m_files[i].toMap();
-        const int y = i * kFileRowH;
-        if (f.value("path").toString() == m_open) p.fillRect(0, y, w, kFileRowH, theme::selection);
-        else if (i == m_hover) p.fillRect(0, y, w, kFileRowH, theme::hover);
+        const int y = i * kFileRowH();
+        if (f.value("path").toString() == m_open) p.fillRect(0, y, w, kFileRowH(), theme::selection);
+        else if (i == m_hover) p.fillRect(0, y, w, kFileRowH(), theme::hover);
         const QString st = f.value("status").toString();
         QColor sc = theme::statusColor(st);
         QColor sbg = sc;
@@ -351,7 +356,7 @@ void FileList::paintEvent(QPaintEvent *ev)
             const int tw = QFontMetrics(mono).horizontalAdvance(t);
             sx -= tw;
             p.setPen(c);
-            p.drawText(QRect(sx, y, tw, kFileRowH), Qt::AlignVCenter, t);
+            p.drawText(QRect(sx, y, tw, kFileRowH()), Qt::AlignVCenter, t);
             sx -= 6;
         };
         if (f.value("del").toInt() > 0) stat(QStringLiteral("−%1").arg(f.value("del").toInt()), theme::red);
@@ -369,17 +374,17 @@ void FileList::paintEvent(QPaintEvent *ev)
         if (fileW < avail) {
             dir = fm.elidedText(dir, Qt::ElideLeft, avail - fileW);
             p.setPen(QColor(0x7c, 0x83, 0x90));
-            p.drawText(QRect(x, y, avail, kFileRowH), Qt::AlignVCenter, dir);
+            p.drawText(QRect(x, y, avail, kFileRowH()), Qt::AlignVCenter, dir);
             x += fm.horizontalAdvance(dir);
         }
         p.setPen(theme::text);
-        p.drawText(QRect(x, y, avail - (x - 40), kFileRowH), Qt::AlignVCenter, fm.elidedText(file, Qt::ElideLeft, avail - (x - 40)));
+        p.drawText(QRect(x, y, avail - (x - 40), kFileRowH()), Qt::AlignVCenter, fm.elidedText(file, Qt::ElideLeft, avail - (x - 40)));
     }
 }
 
 void FileList::mousePressEvent(QMouseEvent *e)
 {
-    const int i = int(e->position().y()) / kFileRowH;
+    const int i = int(e->position().y()) / kFileRowH();
     if (i < 0 || i >= m_files.size()) return;
     if (!m_action.isEmpty() && actionRect(i).contains(e->position().toPoint())) emit actionClicked(m_files[i].toMap());
     else emit fileClicked(m_files[i].toMap());
@@ -387,7 +392,7 @@ void FileList::mousePressEvent(QMouseEvent *e)
 
 void FileList::mouseDoubleClickEvent(QMouseEvent *e)
 {
-    const int i = int(e->position().y()) / kFileRowH;
+    const int i = int(e->position().y()) / kFileRowH();
     if (!m_action.isEmpty() && i >= 0 && i < m_files.size() && !actionRect(i).contains(e->position().toPoint()))
         emit actionClicked(m_files[i].toMap());
 }
@@ -396,7 +401,7 @@ bool FileList::event(QEvent *e)
 {
     if (e->type() == QEvent::ToolTip && !m_action.isEmpty()) {
         auto *he = static_cast<QHelpEvent *>(e);
-        const int i = he->pos().y() / kFileRowH;
+        const int i = he->pos().y() / kFileRowH();
         if (i >= 0 && i < m_files.size() && actionRect(i).contains(he->pos())) QToolTip::showText(he->globalPos(), m_actionTip, this);
         else QToolTip::hideText();
         return true;
@@ -406,7 +411,7 @@ bool FileList::event(QEvent *e)
 
 void FileList::mouseMoveEvent(QMouseEvent *e)
 {
-    int i = int(e->position().y()) / kFileRowH;
+    int i = int(e->position().y()) / kFileRowH();
     if (i >= m_files.size()) i = -1;
     if (i != m_hover) {
         m_hover = i;
@@ -439,14 +444,29 @@ DetailsPanel::DetailsPanel(QWidget *parent) : QScrollArea(parent)
     m_placeholder->setAlignment(Qt::AlignCenter);
     v->addWidget(m_placeholder);
 
+    // the message, with its edit button beside the title (a long body must not push it out of
+    // sight); double-clicking the message edits it too
     m_summary = label(m_content, 16, true, theme::text);
     m_summary->setWordWrap(true);
     m_summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    v->addWidget(m_summary);
+    m_edit = new QPushButton(QStringLiteral("✎ Edit"), m_content);
+    m_edit->setProperty("chip", true);
+    m_edit->setCursor(Qt::PointingHandCursor);
+    m_edit->setToolTip(QStringLiteral("Edit the commit message (or double-click it)"));
+    connect(m_edit, &QPushButton::clicked, this, &DetailsPanel::editMessage);
+    auto *sr = new QHBoxLayout;
+    sr->setSpacing(10);
+    sr->addWidget(m_summary, 1);
+    sr->addWidget(m_edit, 0, Qt::AlignTop);
+    v->addLayout(sr);
     m_body = label(m_content, 13, false, theme::dim);
     m_body->setWordWrap(true);
     m_body->setTextInteractionFlags(Qt::TextSelectableByMouse);
     v->addWidget(m_body);
+    m_more = label(m_content, 12, false, theme::accent);
+    m_more->setCursor(Qt::PointingHandCursor);
+    v->addWidget(m_more);
+    for (QLabel *l : {m_summary, m_body, m_more}) l->installEventFilter(this);
 
     m_authorRow = new QWidget(m_content);
     auto *ar = new QHBoxLayout(m_authorRow);
@@ -483,18 +503,9 @@ DetailsPanel::DetailsPanel(QWidget *parent) : QScrollArea(parent)
     m_parentsLayout->setSpacing(6);
     v->addWidget(m_parentsRow);
 
-    m_edit = new QPushButton(QStringLiteral("✎  Edit message"), m_content);
-    m_edit->setProperty("chip", true);
-    m_edit->setCursor(Qt::PointingHandCursor);
-    connect(m_edit, &QPushButton::clicked, this, &DetailsPanel::editMessage);
-    auto *er = new QHBoxLayout;
-    er->addWidget(m_edit);
-    er->addStretch();
-    v->addLayout(er);
-
     v->addSpacing(8);
     auto *sep = new QWidget(m_content);
-    sep->setFixedHeight(1);
+    sep->setFixedHeight(theme::z(1));
     setBg(sep, theme::border);
     v->addWidget(sep);
     auto *fh = new QHBoxLayout;
@@ -515,12 +526,41 @@ DetailsPanel::DetailsPanel(QWidget *parent) : QScrollArea(parent)
     setDetails({}, 0, 0);
 }
 
+// A long body is cut to its first lines with "Show all", so the author and the
+// changed files stay in view.
+void DetailsPanel::showBody()
+{
+    constexpr int kLines = 8;
+    const QStringList lines = m_fullBody.split(QLatin1Char('\n'));
+    const bool cut = !m_bodyOpen && (lines.size() > kLines || m_fullBody.size() > 700);
+    QString shown = cut ? lines.mid(0, kLines).join(QLatin1Char('\n')).left(700).trimmed() + QStringLiteral(" …") : m_fullBody;
+    m_body->setText(shown);
+    m_body->setVisible(!m_fullBody.isEmpty());
+    m_more->setText(cut ? QStringLiteral("Show all ▾") : QStringLiteral("Show less ▴"));
+    m_more->setVisible(cut || m_bodyOpen);
+}
+
+bool DetailsPanel::eventFilter(QObject *o, QEvent *e)
+{
+    if (o == m_more && e->type() == QEvent::MouseButtonPress) {
+        m_bodyOpen = !m_bodyOpen;
+        showBody();
+        return true;
+    }
+    if ((o == m_summary || o == m_body) && e->type() == QEvent::MouseButtonDblClick && m_edit->isVisible()) {
+        emit editMessage();
+        return true;
+    }
+    return QScrollArea::eventFilter(o, e);
+}
+
 void DetailsPanel::setDetails(const QVariantMap &d, int laneColor, int rewordState)
 {
     const bool has = d.contains("id") && !d.contains("error");
     m_id = d.value("id").toString();
     m_placeholder->setVisible(!has);
     for (QWidget *w : std::initializer_list<QWidget *>{m_summary, m_body, m_filesHead, m_stats, m_files}) w->setVisible(has);
+    m_more->setVisible(false);
     const bool wip = d.value("wip").toBool();
     m_authorRow->setVisible(has && !wip);
     m_edit->setVisible(has && rewordState > 0);
@@ -531,9 +571,9 @@ void DetailsPanel::setDetails(const QVariantMap &d, int laneColor, int rewordSta
         return;
     }
     m_summary->setText(d.value("summary").toString());
-    const QString body = d.value("body").toString();
-    m_body->setText(body);
-    m_body->setVisible(!body.isEmpty());
+    m_fullBody = d.value("body").toString();
+    m_bodyOpen = false;
+    showBody();
     m_avatar->set(d.value("email").toString(), d.value("author").toString(), theme::lane(laneColor));
     m_author->setText(d.value("author").toString());
     const QString fmt = QStringLiteral("ddd d MMM yyyy, HH:mm");

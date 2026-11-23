@@ -125,7 +125,14 @@ signals:
     void jumpTo(const QString &id);
     void editMessage();
 
+protected:
+    bool eventFilter(QObject *, QEvent *) override;
+
 private:
+    void showBody();
+    QString m_fullBody;
+    bool m_bodyOpen = false;
+    QLabel *m_more;
     QLabel *m_placeholder, *m_summary, *m_body, *m_author, *m_when, *m_committer, *m_filesHead, *m_stats;
     AvatarWidget *m_avatar;
     QPushButton *m_sha, *m_edit;

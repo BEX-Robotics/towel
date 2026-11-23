@@ -1,4 +1,7 @@
 #include "theme.h"
+#include <algorithm>
+#include <QWidget>
+#include <QApplication>
 #include <QFontDatabase>
 #include <QPainter>
 #include <QPainterPath>
@@ -31,10 +34,55 @@ QColor statusColor(const QString &s)
     return yellow;
 }
 
+namespace {
+double g_zoom = 1.0;
+}
+
+double zoom() { return g_zoom; }
+
+Zoom *Zoom::instance()
+{
+    static Zoom z;
+    return &z;
+}
+
+void setZoom(double factor)
+{
+    factor = std::clamp(factor, 0.6, 3.0);
+    if (qFuzzyCompare(factor, g_zoom)) return;
+    const double old = g_zoom;
+    g_zoom = factor;
+    QApplication::setFont(uiFont(13));
+    // styled widgets only pick up the new application font when the sheet is re-applied
+    if (auto *app = qobject_cast<QApplication *>(QCoreApplication::instance())) app->setStyleSheet(app->styleSheet());
+    // widgets built at the old zoom: their explicit fonts and fixed sizes, scaled
+    // from the size they were built with (kept in a property, so no rounding drift)
+    for (QWidget *w : QApplication::allWidgets()) {
+        if (w->testAttribute(Qt::WA_SetFont) && w->font().pixelSize() > 0) {
+            QVariant base = w->property("towelPx");
+            if (!base.isValid()) w->setProperty("towelPx", base = w->font().pixelSize() / old);
+            QFont f = w->font();
+            f.setPixelSize(std::max(6, int(base.toDouble() * g_zoom + 0.5)));
+            w->setFont(f);
+        }
+        if (w->minimumHeight() == w->maximumHeight() && w->minimumHeight() > 0) {
+            QVariant base = w->property("towelH");
+            if (!base.isValid()) w->setProperty("towelH", base = w->minimumHeight() / old);
+            w->setFixedHeight(int(base.toDouble() * g_zoom + 0.5));
+        }
+        if (w->minimumWidth() == w->maximumWidth() && w->minimumWidth() > 0) {
+            QVariant base = w->property("towelW");
+            if (!base.isValid()) w->setProperty("towelW", base = w->minimumWidth() / old);
+            w->setFixedWidth(int(base.toDouble() * g_zoom + 0.5));
+        }
+    }
+    emit Zoom::instance()->changed();
+}
+
 QFont uiFont(int px, bool bold)
 {
     QFont f = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
-    f.setPixelSize(px);
+    f.setPixelSize(z(px));
     f.setBold(bold);
     return f;
 }
@@ -42,7 +90,7 @@ QFont uiFont(int px, bool bold)
 QFont monoFont(int px)
 {
     QFont f = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    f.setPixelSize(px);
+    f.setPixelSize(z(px));
     f.setStyleHint(QFont::Monospace);
     return f;
 }

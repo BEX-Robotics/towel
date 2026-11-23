@@ -37,9 +37,15 @@ CommitView::CommitView(CommitModel *model, QWidget *parent) : QAbstractScrollAre
 {
     setFrameShape(QFrame::NoFrame);
     viewport()->setMouseTracking(true);
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, [this] {
+        const int top = verticalScrollBar()->value() / std::max(1, m_rowHAtZoom); // keep the same top row
+        relayout();
+        verticalScrollBar()->setValue(top * kRowH());
+        m_rowHAtZoom = kRowH();
+    });
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
     setFocusPolicy(Qt::StrongFocus);
-    verticalScrollBar()->setSingleStep(kRowH);
+    verticalScrollBar()->setSingleStep(kRowH());
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     connect(m_model, &CommitModel::reset, this, [this] {
         relayout();
@@ -54,7 +60,7 @@ CommitView::CommitView(CommitModel *model, QWidget *parent) : QAbstractScrollAre
 int CommitView::graphWidth() const
 {
     const int sv = verticalScrollBar()->value(), h = viewport()->height();
-    const int first = std::max(0, sv / kRowH - h / kRowH), last = std::min(m_model->count() - 1, (sv + 2 * h) / kRowH);
+    const int first = std::max(0, sv / kRowH() - h / kRowH()), last = std::min(m_model->count() - 1, (sv + 2 * h) / kRowH());
     int lanes = 1;
     for (int r = first; r <= last; ++r) {
         const CommitRow *row = m_model->row(r);
@@ -62,7 +68,7 @@ int CommitView::graphWidth() const
         const Edge *e = m_model->edgesOf(row);
         for (int k = 0; k < row->edgeCount; ++k) lanes = std::max({lanes, int(e[k].a) + 1, int(e[k].b) + 1});
     }
-    return std::min(std::max(lanes, 2) * kLaneW + 16, 400);
+    return std::min(std::max(lanes, 2) * kLaneW() + 16, 400);
 }
 int CommitView::refsWidth() const { return viewport()->width() > 760 ? 176 : 0; }
 int CommitView::authorWidth() const { return viewport()->width() > 1000 ? 150 : 0; }
@@ -72,7 +78,7 @@ void CommitView::relayout()
 {
     const int visible = viewport()->height();
     verticalScrollBar()->setPageStep(visible);
-    verticalScrollBar()->setRange(0, std::max(0, m_model->count() * kRowH - visible));
+    verticalScrollBar()->setRange(0, std::max(0, m_model->count() * kRowH() - visible));
 }
 
 void CommitView::resizeEvent(QResizeEvent *e)
@@ -85,7 +91,7 @@ void CommitView::scrollContentsBy(int, int) { viewport()->update(); }
 
 int CommitView::rowAt(int y) const
 {
-    const int r = (y + verticalScrollBar()->value()) / kRowH;
+    const int r = (y + verticalScrollBar()->value()) / kRowH();
     return (r >= 0 && r < m_model->count()) ? r : -1;
 }
 
@@ -94,9 +100,9 @@ void CommitView::setCurrent(int row, bool ensureVisible)
     if (m_model->count() == 0) return;
     row = std::clamp(row, 0, m_model->count() - 1);
     if (ensureVisible) {
-        const int top = row * kRowH, sv = verticalScrollBar()->value(), h = viewport()->height();
+        const int top = row * kRowH(), sv = verticalScrollBar()->value(), h = viewport()->height();
         if (top < sv) verticalScrollBar()->setValue(top);
-        else if (top + kRowH > sv + h) verticalScrollBar()->setValue(top + kRowH - h);
+        else if (top + kRowH() > sv + h) verticalScrollBar()->setValue(top + kRowH() - h);
     }
     if (row == m_current) return;
     m_current = row;
@@ -112,10 +118,10 @@ void CommitView::paintEvent(QPaintEvent *)
     const int h = viewport()->height();
     p.fillRect(viewport()->rect(), theme::bg);
     const int sv = verticalScrollBar()->value();
-    const int first = sv / kRowH;
-    const int last = std::min(m_model->count() - 1, (sv + h) / kRowH);
+    const int first = sv / kRowH();
+    const int last = std::min(m_model->count() - 1, (sv + h) / kRowH());
     m_gw = graphWidth();
-    for (int r = first; r <= last; ++r) paintRow(p, r, r * kRowH - sv);
+    for (int r = first; r <= last; ++r) paintRow(p, r, r * kRowH() - sv);
 }
 
 // Ref chip: fully rounded, icon first. Current branch is filled with its lane
@@ -161,7 +167,7 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell)
 {
     const CommitRow *r = m_model->row(row);
     const qreal H = cell.height(), top = cell.top(), bottom = top + H, mid = top + H / 2;
-    auto X = [&](int lane) { return cell.left() + 10 + kLaneW * lane + kLaneW / 2.0; };
+    auto X = [&](int lane) { return cell.left() + 10 + kLaneW() * lane + kLaneW() / 2.0; };
     p.save();
     p.setClipRect(cell);
     p.setRenderHint(QPainter::Antialiasing);
@@ -190,7 +196,7 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell)
 
     const QColor c = theme::lane(r->color);
     const qreal x = X(r->col);
-    const qreal R = kNode / 2.0;
+    const qreal R = kNode() / 2.0;
     if (r->wip) {
         QPen pen(c, 1.6, Qt::CustomDashLine);
         pen.setDashPattern({2.5, 2.0});
@@ -209,7 +215,7 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell)
         p.setPen(QPen(c, 1.6));
         p.setBrush(Qt::NoBrush);
         p.drawEllipse(QPointF(x, mid), R + 0.5, R + 0.5);
-        AvatarCache::paint(&p, QRectF(x - R + 2, mid - R + 2, kNode - 4, kNode - 4), m_model->emailOf(r), m_model->authorOf(r), theme::bg, 0);
+        AvatarCache::paint(&p, QRectF(x - R + 2, mid - R + 2, kNode() - 4, kNode() - 4), m_model->emailOf(r), m_model->authorOf(r), theme::bg, 0);
     }
     p.restore();
 }
@@ -223,15 +229,15 @@ void CommitView::paintRow(QPainter &p, int row, int y)
     const bool cur = row == m_current;
 
     if (cur) {
-        p.fillRect(0, y, w, kRowH, theme::selection);
-        p.fillRect(0, y, 3, kRowH, lane);
+        p.fillRect(0, y, w, kRowH(), theme::selection);
+        p.fillRect(0, y, 3, kRowH(), lane);
     } else if (row == m_hover) {
-        p.fillRect(0, y, w, kRowH, theme::hover);
+        p.fillRect(0, y, w, kRowH(), theme::hover);
     }
 
     p.save();
     if (!m_model->isHit(row)) p.setOpacity(0.3);
-    const qreal cy = y + kRowH / 2.0;
+    const qreal cy = y + kRowH() / 2.0;
 
     const int rw = refsWidth();
     const auto &refs = m_model->refs(row);
@@ -266,14 +272,14 @@ void CommitView::paintRow(QPainter &p, int row, int y)
             p.drawText(mr, Qt::AlignCenter, more);
             lx = mr.right();
         }
-        const qreal nodeX = rw + 10 + kLaneW * r->col + kLaneW / 2.0 - kNode / 2.0;
+        const qreal nodeX = rw + 10 + kLaneW() * r->col + kLaneW() / 2.0 - kNode() / 2.0;
         QColor lc = lane;
         lc.setAlpha(170);
         p.setRenderHint(QPainter::Antialiasing, false);
         p.fillRect(QRectF(lx + 3, cy - 0.75, std::max<qreal>(0, nodeX - lx - 3), 1.5), lc);
     }
 
-    paintGraph(p, row, QRectF(rw, y, gw, kRowH));
+    paintGraph(p, row, QRectF(rw, y, gw, kRowH()));
 
     // narrow window: refs inline before the message
     for (int i = 0; !rw && i < refs.size(); ++i) {
@@ -287,7 +293,7 @@ void CommitView::paintRow(QPainter &p, int row, int y)
             p.setFont(theme::uiFont(11));
             p.setPen(theme::dim);
             const QString more = QStringLiteral("+%1").arg(refs.size() - i - 1);
-            p.drawText(QRectF(x, y, 30, kRowH), Qt::AlignVCenter, more);
+            p.drawText(QRectF(x, y, 30, kRowH()), Qt::AlignVCenter, more);
             x += QFontMetrics(p.font()).horizontalAdvance(more) + 8;
             break;
         }
@@ -303,20 +309,20 @@ void CommitView::paintRow(QPainter &p, int row, int y)
         p.setFont(it);
         p.setPen(theme::yellow);
         const int n = m_model->wipCount();
-        p.drawText(QRect(int(x), y, avail, kRowH), Qt::AlignVCenter,
+        p.drawText(QRect(int(x), y, avail, kRowH()), Qt::AlignVCenter,
                    QStringLiteral("Uncommitted changes · %1 %2").arg(n).arg(n == 1 ? QStringLiteral("file") : QStringLiteral("files")));
     } else if (avail > 20) {
         const QString summary = m_model->summary(row);
         const QString s = fm.elidedText(summary, Qt::ElideRight, avail);
         p.setFont(f);
         p.setPen(r->merge ? theme::dim : theme::text);
-        p.drawText(QRect(int(x), y, avail, kRowH), Qt::AlignVCenter, s);
+        p.drawText(QRect(int(x), y, avail, kRowH()), Qt::AlignVCenter, s);
         const int used = fm.horizontalAdvance(s);
         const QString body = m_model->body(row);
         if (!body.isEmpty() && s == summary && used + 40 < avail) {
             p.setPen(theme::faint);
             const int bx = int(x) + used + 12;
-            p.drawText(QRect(bx, y, avail - used - 12, kRowH), Qt::AlignVCenter, fm.elidedText(body, Qt::ElideRight, avail - used - 12));
+            p.drawText(QRect(bx, y, avail - used - 12, kRowH()), Qt::AlignVCenter, fm.elidedText(body, Qt::ElideRight, avail - used - 12));
         }
     }
 
@@ -324,9 +330,9 @@ void CommitView::paintRow(QPainter &p, int row, int y)
     p.setFont(theme::uiFont(12));
     p.setPen(theme::dim);
     if (aw && !r->wip)
-        p.drawText(QRect(w - dw - aw - 4, y, aw - 8, kRowH), Qt::AlignVCenter,
+        p.drawText(QRect(w - dw - aw - 4, y, aw - 8, kRowH()), Qt::AlignVCenter,
                    QFontMetrics(p.font()).elidedText(m_model->authorOf(r), Qt::ElideRight, aw - 8));
-    if (dw && !r->wip) p.drawText(QRect(w - dw - 4, y, dw - 10, kRowH), Qt::AlignVCenter | Qt::AlignRight, relativeTime(r->time));
+    if (dw && !r->wip) p.drawText(QRect(w - dw - 4, y, dw - 10, kRowH()), Qt::AlignVCenter | Qt::AlignRight, relativeTime(r->time));
     p.restore();
 }
 
@@ -364,7 +370,7 @@ void CommitView::leaveEvent(QEvent *)
 
 void CommitView::keyPressEvent(QKeyEvent *e)
 {
-    const int page = std::max(1, viewport()->height() / kRowH);
+    const int page = std::max(1, viewport()->height() / kRowH());
     switch (e->key()) {
     case Qt::Key_Down:
     case Qt::Key_J: setCurrent(m_current + 1); break;
