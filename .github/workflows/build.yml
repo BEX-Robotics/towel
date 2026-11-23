@@ -29,6 +29,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: the smoke-test screenshot shows a real graph
 
       - name: Linux packages
         if: runner.os == 'Linux'
@@ -118,7 +120,10 @@ jobs:
             Windows) APP=Towel/towel.exe ;;
           esac
           chmod +x "$APP" 2>/dev/null || true
-          timeout 60 "$APP" "$GITHUB_WORKSPACE" || echo "exit code $?"
+          # Towel quits by itself after the screenshot; macOS has no `timeout`, so watch it here
+          "$APP" "$GITHUB_WORKSPACE" & pid=$!
+          for i in $(seq 60); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          kill $pid 2>/dev/null || true
           test -s "$TOWEL_SHOT" || { echo "::error::Towel did not start: no screenshot"; exit 1; }
 
       - uses: actions/upload-artifact@v4
