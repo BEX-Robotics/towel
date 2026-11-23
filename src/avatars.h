@@ -12,8 +12,7 @@ class QPainter;
 
 // Fetches avatars (GitHub for noreply addresses, Gravatar "retro" otherwise),
 // caches them on disk and in memory. Main thread only.
-class AvatarCache : public QObject
-{
+class AvatarCache : public QObject {
     Q_OBJECT
 public:
     static AvatarCache *instance();

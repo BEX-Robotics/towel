@@ -16,18 +16,17 @@
 
 namespace {
 
-QLabel *label(QWidget *parent, int px, bool bold, const QColor &c)
-{
+QLabel *label(QWidget *parent, int px, bool bold, const QColor &c) {
     auto *l = new QLabel(parent);
     l->setFont(theme::uiFont(px, bold));
     QPalette p = l->palette();
     p.setColor(QPalette::WindowText, c);
     l->setPalette(p);
+
     return l;
 }
 
-QStringList pathsOf(const QVariantMap &f)
-{
+QStringList pathsOf(const QVariantMap &f) {
     QStringList out{f.value("path").toString()};
     if (!f.value("oldPath").toString().isEmpty()) out << f.value("oldPath").toString();
     return out;
@@ -35,8 +34,7 @@ QStringList pathsOf(const QVariantMap &f)
 
 } // namespace
 
-CommitPanel::CommitPanel(QWidget *parent) : QWidget(parent)
-{
+CommitPanel::CommitPanel(QWidget *parent) : QWidget(parent) {
     setAutoFillBackground(true);
     QPalette pal = palette();
     pal.setColor(QPalette::Window, theme::panel);
@@ -152,8 +150,7 @@ CommitPanel::CommitPanel(QWidget *parent) : QWidget(parent)
     updateButton();
 }
 
-void CommitPanel::setStatus(const QVariantMap &status)
-{
+void CommitPanel::setStatus(const QVariantMap &status) {
     m_unstagedFiles = status.value("unstaged").toList();
     m_stagedFiles = status.value("staged").toList();
     m_unstaged->setFiles(m_unstagedFiles);
@@ -171,25 +168,21 @@ void CommitPanel::setStatus(const QVariantMap &status)
     updateButton();
 }
 
-const QVariantList &CommitPanel::files(const QString &mode) const
-{
+const QVariantList &CommitPanel::files(const QString &mode) const {
     return mode == QLatin1String("staged") ? m_stagedFiles : m_unstagedFiles;
 }
 
-void CommitPanel::setBranch(const QString &branch)
-{
+void CommitPanel::setBranch(const QString &branch) {
     m_branch = branch;
     updateButton();
 }
 
-void CommitPanel::setOpenFile(const QString &mode, const QString &path)
-{
+void CommitPanel::setOpenFile(const QString &mode, const QString &path) {
     m_unstaged->setOpenPath(mode == QLatin1String("unstaged") ? path : QString());
     m_staged->setOpenPath(mode == QLatin1String("staged") ? path : QString());
 }
 
-void CommitPanel::setAmendInfo(const QString &headMessage, bool headPushed)
-{
+void CommitPanel::setAmendInfo(const QString &headMessage, bool headPushed) {
     m_amendWarn->setVisible(m_amend->isChecked() && headPushed);
     if (m_summary->text().isEmpty() && m_body->toPlainText().isEmpty() && !headMessage.isEmpty()) {
         const int nl = headMessage.indexOf(QLatin1Char('\n'));
@@ -198,22 +191,23 @@ void CommitPanel::setAmendInfo(const QString &headMessage, bool headPushed)
     }
 }
 
-void CommitPanel::updateButton()
-{
+void CommitPanel::updateButton() {
     const int n = int(m_stagedFiles.size());
     const int len = int(m_summary->text().size());
     m_counter->setText(len ? QString::number(len) : QString());
     QPalette p = m_counter->palette();
-    p.setColor(QPalette::WindowText, len > 72 ? theme::red : len > 50 ? theme::yellow : theme::faint);
+    p.setColor(QPalette::WindowText, len > 72 ? theme::red : len > 50 ? theme::yellow
+                                                                      : theme::faint);
     m_counter->setPalette(p);
     const QString to = m_branch.isEmpty() ? QString() : QStringLiteral(" to ") + m_branch;
-    if (m_amend->isChecked()) m_commit->setText(n ? QStringLiteral("Amend with %1 %2").arg(n).arg(n == 1 ? "file" : "files") : QStringLiteral("Amend message"));
-    else m_commit->setText(QStringLiteral("Commit %1 %2%3").arg(n).arg(n == 1 ? "file" : "files", to));
+    if (m_amend->isChecked())
+        m_commit->setText(n ? QStringLiteral("Amend with %1 %2").arg(n).arg(n == 1 ? "file" : "files") : QStringLiteral("Amend message"));
+    else
+        m_commit->setText(QStringLiteral("Commit %1 %2%3").arg(n).arg(n == 1 ? "file" : "files", to));
     m_commit->setEnabled(!m_summary->text().trimmed().isEmpty() && (n > 0 || m_amend->isChecked()));
 }
 
-void CommitPanel::triggerCommit()
-{
+void CommitPanel::triggerCommit() {
     if (!m_commit->isEnabled()) return;
     QString msg = m_summary->text().trimmed();
     const QString body = m_body->toPlainText().trimmed();
@@ -221,18 +215,15 @@ void CommitPanel::triggerCommit()
     emit commit(msg, m_amend->isChecked());
 }
 
-void CommitPanel::clearMessage()
-{
+void CommitPanel::clearMessage() {
     m_summary->clear();
     m_body->clear();
     m_amend->setChecked(false);
     saveDraft();
 }
 
-void CommitPanel::setRepoKey(const QString &repoPath)
-{
-    const QString key = QStringLiteral("drafts/")
-                      + QString::fromLatin1(QCryptographicHash::hash(repoPath.toUtf8(), QCryptographicHash::Md5).toHex());
+void CommitPanel::setRepoKey(const QString &repoPath) {
+    const QString key = QStringLiteral("drafts/") + QString::fromLatin1(QCryptographicHash::hash(repoPath.toUtf8(), QCryptographicHash::Md5).toHex());
     if (key == m_draftKey) return;
     m_draftKey = key;
     QSettings s;
@@ -242,8 +233,7 @@ void CommitPanel::setRepoKey(const QString &repoPath)
     updateButton();
 }
 
-void CommitPanel::saveDraft()
-{
+void CommitPanel::saveDraft() {
     if (m_draftKey.isEmpty()) return;
     QSettings s;
     if (m_summary->text().isEmpty() && m_body->toPlainText().isEmpty()) {

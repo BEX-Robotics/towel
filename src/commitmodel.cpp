@@ -6,8 +6,7 @@
 
 namespace {
 
-QList<RefGroup> groupRefs(const QList<RefLabel> &refs)
-{
+QList<RefGroup> groupRefs(const QList<RefLabel> &refs) {
     QList<RefGroup> groups;
     auto find = [&](const QString &name) -> int {
         for (int i = 0; i < groups.size(); ++i)
@@ -16,7 +15,7 @@ QList<RefGroup> groupRefs(const QList<RefLabel> &refs)
     };
     for (const RefLabel &r : refs) {
         if (r.kind == QLatin1String("tag")) {
-            RefGroup g;
+            RefGroup g = {};
             g.name = r.name;
             g.tag = true;
             groups.append(g);
@@ -31,7 +30,7 @@ QList<RefGroup> groupRefs(const QList<RefLabel> &refs)
         }
         int gi = find(base);
         if (gi < 0) {
-            RefGroup g;
+            RefGroup g = {};
             g.name = base;
             groups.append(g);
             gi = int(groups.size()) - 1;
@@ -47,8 +46,7 @@ QList<RefGroup> groupRefs(const QList<RefLabel> &refs)
 
 } // namespace
 
-void CommitModel::setData(const QString &root, LoadResult &res)
-{
+void CommitModel::setData(const QString &root, LoadResult &res) {
     m_root = root;
     m_rows = std::move(res.rows);
     m_edges = std::move(res.edges);
@@ -73,15 +71,14 @@ void CommitModel::setData(const QString &root, LoadResult &res)
     emit reset();
 }
 
-const CommitModel::Text &CommitModel::text(int row) const
-{
+const CommitModel::Text &CommitModel::text(int row) const {
     if (row < 0 || row >= int(m_rows.size())) return m_empty;
     if (const Text *t = m_text.object(row)) return *t;
     const CommitRow &r = m_rows[row];
     auto *t = new Text;
-    if (r.wip) {
+    if (r.wip)
         t->summary = QStringLiteral("// WIP");
-    } else if (m_repo) {
+    else if (m_repo) {
         git_oid oid;
         std::memcpy(oid.id, r.oid.data(), 20);
         GCommit c;
@@ -94,26 +91,24 @@ const CommitModel::Text &CommitModel::text(int row) const
     return *m_text.object(row);
 }
 
-const QList<RefGroup> &CommitModel::refs(int i) const
-{
+const QList<RefGroup> &CommitModel::refs(int i) const {
     static const QList<RefGroup> none;
     auto it = m_refs.constFind(i);
     return it == m_refs.constEnd() ? none : *it;
 }
 
-int CommitModel::indexOf(const QString &id) const
-{
+int CommitModel::indexOf(const QString &id) const {
     if (id == QLatin1String("WIP")) return (!m_rows.empty() && m_rows[0].wip) ? 0 : -1;
     const QByteArray bytes = QByteArray::fromHex(id.toLatin1());
     if (bytes.size() != 20) return -1;
-    RawOid o;
+    RawOid o = {};
     std::memcpy(o.data(), bytes.constData(), 20);
     auto it = std::lower_bound(m_sorted.begin(), m_sorted.end(), o, [](const auto &e, const RawOid &k) { return e.first < k; });
+
     return (it != m_sorted.end() && it->first == o) ? it->second : -1;
 }
 
-void CommitModel::search(const QString &query)
-{
+void CommitModel::search(const QString &query) {
     const QString q = query.trimmed();
     const quint64 gen = ++m_searchGen;
     if (q.isEmpty()) {
@@ -121,6 +116,7 @@ void CommitModel::search(const QString &query)
         m_hits.clear();
         m_hitList.clear();
         emit searchFinished();
+
         return;
     }
     std::vector<RawOid> oids;
@@ -141,7 +137,7 @@ void CommitModel::search(const QString &query)
 
     const QString root = m_root;
     QtConcurrent::run([q, root, oids = std::move(oids), authors = std::move(authors), authorHit = std::move(authorHit),
-                       refHit = std::move(refHit)]() {
+                          refHit = std::move(refHit)]() {
         std::vector<char> hits(oids.size(), 0);
         const QByteArray needle = q.toUtf8().toLower();
         const bool hexish = needle.size() >= 4 && QByteArray::fromHex(needle).toHex() == needle;

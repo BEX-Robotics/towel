@@ -12,9 +12,9 @@ namespace theme {
 double zoom();
 inline int z(int px) { return int(px * zoom() + 0.5); }
 inline qreal zf(qreal v) { return v * zoom(); }
+
 void setZoom(double factor); // rescales live widgets too
-class Zoom : public QObject
-{
+class Zoom : public QObject {
     Q_OBJECT
 public:
     static Zoom *instance();
@@ -58,6 +58,11 @@ QFont monoFont(int px);
 QString styleSheet();
 
 // Small vector icons, drawn in the given color inside r.
-enum class Icon { Laptop, Cloud, Tag, Branch, Stash };
+enum class Icon { Laptop,
+    Cloud,
+    Tag,
+    Branch,
+    Stash };
+
 void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c);
 } // namespace theme

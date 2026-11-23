@@ -9,8 +9,7 @@
 namespace theme {
 
 // Towel's lane palette: ten hues at matched brightness, so no branch shouts.
-QColor lane(int i)
-{
+QColor lane(int i) {
     static const QColor pal[] = {
         QColor(0x5a, 0xa9, 0xe6), // sky
         QColor(0xe0, 0x71, 0x9c), // rose
@@ -26,8 +25,7 @@ QColor lane(int i)
     return pal[((i % 10) + 10) % 10];
 }
 
-QColor statusColor(const QString &s)
-{
+QColor statusColor(const QString &s) {
     if (s == QLatin1String("A")) return green;
     if (s == QLatin1String("D")) return red;
     if (s == QLatin1String("R")) return blue;
@@ -40,21 +38,21 @@ double g_zoom = 1.0;
 
 double zoom() { return g_zoom; }
 
-Zoom *Zoom::instance()
-{
+Zoom *Zoom::instance() {
     static Zoom z;
     return &z;
 }
 
-void setZoom(double factor)
-{
+void setZoom(double factor) {
     factor = std::clamp(factor, 0.6, 3.0);
     if (qFuzzyCompare(factor, g_zoom)) return;
     const double old = g_zoom;
     g_zoom = factor;
     QApplication::setFont(uiFont(13));
+
     // styled widgets only pick up the new application font when the sheet is re-applied
     if (auto *app = qobject_cast<QApplication *>(QCoreApplication::instance())) app->setStyleSheet(app->styleSheet());
+
     // widgets built at the old zoom: their explicit fonts and fixed sizes, scaled
     // from the size they were built with (kept in a property, so no rounding drift)
     for (QWidget *w : QApplication::allWidgets()) {
@@ -76,27 +74,26 @@ void setZoom(double factor)
             w->setFixedWidth(int(base.toDouble() * g_zoom + 0.5));
         }
     }
-    emit Zoom::instance()->changed();
+    emit Zoom::instance() -> changed();
 }
 
-QFont uiFont(int px, bool bold)
-{
+QFont uiFont(int px, bool bold) {
     QFont f = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
     f.setPixelSize(z(px));
     f.setBold(bold);
+
     return f;
 }
 
-QFont monoFont(int px)
-{
+QFont monoFont(int px) {
     QFont f = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     f.setPixelSize(z(px));
     f.setStyleHint(QFont::Monospace);
+
     return f;
 }
 
-QString styleSheet()
-{
+QString styleSheet() {
     return QStringLiteral(R"(
 QWidget { color: #d8dce3; }
 QToolTip { background: #0f1114; color: #d8dce3; border: 1px solid #2b2f37; padding: 4px; }
@@ -132,8 +129,7 @@ QDialog { background: #21242b; }
 )");
 }
 
-void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c)
-{
+void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c) {
     p->save();
     p->setRenderHint(QPainter::Antialiasing);
     p->translate(r.topLeft());
@@ -148,6 +144,7 @@ void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c)
         p->drawRoundedRect(QRectF(3, 3.5, 10, 7), 1, 1);
         p->drawLine(QPointF(1.5, 12.5), QPointF(14.5, 12.5));
         break;
+
     case Icon::Cloud: {
         QPainterPath path(QPointF(4.5, 12.5));
         path.lineTo(11.7, 12.5);
@@ -157,6 +154,7 @@ void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c)
         p->drawPath(path);
         break;
     }
+
     case Icon::Tag: {
         QPainterPath path(QPointF(2, 2.5));
         path.lineTo(7.5, 2.5);
@@ -170,6 +168,7 @@ void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c)
         p->drawEllipse(QPointF(5, 5.5), 1, 1);
         break;
     }
+
     case Icon::Branch:
         p->drawEllipse(QPointF(4.5, 3.5), 1.6, 1.6);
         p->drawEllipse(QPointF(4.5, 12.5), 1.6, 1.6);
@@ -181,6 +180,7 @@ void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c)
             p->drawPath(path);
         }
         break;
+
     case Icon::Stash: {
         QPainterPath path(QPointF(2, 9.5));
         path.lineTo(3.5, 3.5);

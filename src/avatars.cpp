@@ -12,29 +12,25 @@
 #include <QStandardPaths>
 
 namespace {
-constexpr int kMaxInflight = 6;
-constexpr int kSize = 64;
-}
+constexpr int maxInflight = 6;
+constexpr int avatarPx = 64;
+} // namespace
 
-AvatarCache *AvatarCache::instance()
-{
+AvatarCache *AvatarCache::instance() {
     static AvatarCache *c = new AvatarCache;
     return c;
 }
 
-AvatarCache::AvatarCache(QObject *parent) : QObject(parent)
-{
+AvatarCache::AvatarCache(QObject *parent) : QObject(parent) {
     m_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/avatars2") /* v2: no Gravatar identicons */;
     QDir().mkpath(m_dir);
 }
 
-QString AvatarCache::keyFor(const QString &email)
-{
+QString AvatarCache::keyFor(const QString &email) {
     return QString::fromLatin1(QCryptographicHash::hash(email.trimmed().toLower().toUtf8(), QCryptographicHash::Md5).toHex());
 }
 
-QImage AvatarCache::get(const QString &email)
-{
+QImage AvatarCache::get(const QString &email) {
     // May be called from the scene graph render thread: only touch locked state,
     // hand the actual loading to the main thread.
     if (email.isEmpty()) return {};
@@ -52,8 +48,7 @@ QImage AvatarCache::get(const QString &email)
 
 namespace {
 // GitHub's default identicon (a 2-color pixel pattern) is not a photo
-bool isIdenticon(const QImage &img)
-{
+bool isIdenticon(const QImage &img) {
     const QImage t = img.scaled(24, 24, Qt::IgnoreAspectRatio, Qt::FastTransformation).convertToFormat(QImage::Format_RGB32);
     QSet<QRgb> colors;
     for (int y = 0; y < t.height() && colors.size() <= 3; ++y)
@@ -62,8 +57,7 @@ bool isIdenticon(const QImage &img)
 }
 } // namespace
 
-void AvatarCache::request(const QString &key, const QString &email)
-{
+void AvatarCache::request(const QString &key, const QString &email) {
     const QString file = m_dir + QLatin1Char('/') + key + QStringLiteral(".png");
     if (QFileInfo fi(file); fi.exists() && fi.lastModified().daysTo(QDateTime::currentDateTime()) < 14) {
         QImage img(file);
@@ -82,26 +76,26 @@ void AvatarCache::request(const QString &key, const QString &email)
         QMutexLocker l(&m_lock);
         m_failed.insert(key);
         m_pending.remove(key);
+
         return;
     }
     m_queue.enqueue({key, email});
     pump();
 }
 
-void AvatarCache::pump()
-{
-    while (m_inflight < kMaxInflight && !m_queue.isEmpty()) {
+void AvatarCache::pump() {
+    while (m_inflight < maxInflight && !m_queue.isEmpty()) {
         const auto [key, email] = m_queue.dequeue();
         QUrl url;
-        static const QRegularExpression ghId(QStringLiteral("^(\\d+)\\+[^@]+@users\\.noreply\\.github\\.com$"), QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression ghID(QStringLiteral("^(\\d+)\\+[^@]+@users\\.noreply\\.github\\.com$"), QRegularExpression::CaseInsensitiveOption);
         static const QRegularExpression ghUser(QStringLiteral("^([^@+]+)@users\\.noreply\\.github\\.com$"), QRegularExpression::CaseInsensitiveOption);
         const QString e = email.trimmed().toLower();
-        if (auto m = ghId.match(e); m.hasMatch())
-            url = QUrl(QStringLiteral("https://avatars.githubusercontent.com/u/%1?s=%2&v=4").arg(m.captured(1)).arg(kSize));
+        if (auto m = ghID.match(e); m.hasMatch())
+            url = QUrl(QStringLiteral("https://avatars.githubusercontent.com/u/%1?s=%2&v=4").arg(m.captured(1)).arg(avatarPx));
         else if (auto m2 = ghUser.match(e); m2.hasMatch())
-            url = QUrl(QStringLiteral("https://github.com/%1.png?size=%2").arg(m2.captured(1)).arg(kSize));
+            url = QUrl(QStringLiteral("https://github.com/%1.png?size=%2").arg(m2.captured(1)).arg(avatarPx));
         else
-            url = QUrl(QStringLiteral("https://www.gravatar.com/avatar/%1?s=%2&d=404").arg(key).arg(kSize));
+            url = QUrl(QStringLiteral("https://www.gravatar.com/avatar/%1?s=%2&d=404").arg(key).arg(avatarPx));
 
         QNetworkRequest req(url);
         req.setTransferTimeout(10000);
@@ -121,13 +115,14 @@ void AvatarCache::pump()
                     m_failed.insert(key);
                     m_pending.remove(key);
                 }
+
                 // only remember real "not found" answers, not offline moments
                 if (generated || reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 404) {
                     QFile f(m_dir + QLatin1Char('/') + key + QStringLiteral(".none"));
                     if (f.open(QIODevice::WriteOnly)) f.close();
                 }
             } else {
-                img = img.scaled(kSize, kSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+                img = img.scaled(avatarPx, avatarPx, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation).convertToFormat(QImage::Format_ARGB32_Premultiplied);
                 img.save(m_dir + QLatin1Char('/') + key + QStringLiteral(".png"));
                 {
                     QMutexLocker l(&m_lock);
@@ -141,8 +136,7 @@ void AvatarCache::pump()
     }
 }
 
-void AvatarCache::paint(QPainter *p, const QRectF &r, const QString &email, const QString &name, const QColor &ring, qreal ringWidth)
-{
+void AvatarCache::paint(QPainter *p, const QRectF &r, const QString &email, const QString &name, const QColor &ring, qreal ringWidth) {
     p->save();
     p->setRenderHint(QPainter::Antialiasing);
     p->setRenderHint(QPainter::SmoothPixmapTransform);
@@ -163,7 +157,7 @@ void AvatarCache::paint(QPainter *p, const QRectF &r, const QString &email, cons
     } else {
         // no photo: initials on a vivid color picked from the email
         static const QRgb palette[] = {0xe5484d, 0xf76b15, 0xffb224, 0x46a758, 0x12a594, 0x00a2c7, 0x0090ff, 0x3e63dd,
-                                       0x6e56cf, 0x8e4ec6, 0xd6409f, 0xe54666, 0xbd4b00, 0x5bb98b, 0xab4aba, 0x7ce2fe};
+            0x6e56cf, 0x8e4ec6, 0xd6409f, 0xe54666, 0xbd4b00, 0x5bb98b, 0xab4aba, 0x7ce2fe};
         const QByteArray hash = QCryptographicHash::hash(email.trimmed().toLower().toUtf8(), QCryptographicHash::Md5);
         const QColor bg = QColor::fromRgb(palette[uchar(hash[0]) % (sizeof(palette) / sizeof(palette[0]))]);
         p->fillRect(inner, bg);

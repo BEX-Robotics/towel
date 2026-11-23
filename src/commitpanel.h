@@ -12,8 +12,7 @@ class QTimer;
 
 // Right panel when the WIP row is selected: unstaged / staged files and the
 // commit message editor. Emits intents; Repo does the git work.
-class CommitPanel : public QWidget
-{
+class CommitPanel : public QWidget {
     Q_OBJECT
 public:
     explicit CommitPanel(QWidget *parent = nullptr);

@@ -40,8 +40,7 @@ struct CommitRow {
     bool wip = false;
     bool hasRefs = false;
 
-    QString id() const
-    {
+    QString id() const {
         if (wip) return QStringLiteral("WIP");
         static const char hex[] = "0123456789abcdef";
         QString s(40, Qt::Uninitialized);

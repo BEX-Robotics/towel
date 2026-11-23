@@ -14,10 +14,9 @@
 #include <QVBoxLayout>
 
 namespace {
-inline int kRowH() { return theme::z(40); }
+inline int rowHeight() { return theme::z(40); }
 
-QString label(const QVariantMap &m)
-{
+QString label(const QVariantMap &m) {
     const QString a = m.value("action").toString();
     if (a == QLatin1String("pick"))
         return m.value("message").toString().trimmed() != m.value("original").toString().trimmed() ? QStringLiteral("Reword") : QStringLiteral("Pick");
@@ -26,8 +25,7 @@ QString label(const QVariantMap &m)
     return QStringLiteral("Drop");
 }
 
-QColor color(const QString &label)
-{
+QColor color(const QString &label) {
     if (label == QLatin1String("Reword")) return theme::yellow;
     if (label == QLatin1String("Squash")) return theme::lane(4);
     if (label == QLatin1String("Fixup")) return theme::lane(5);
@@ -36,8 +34,7 @@ QColor color(const QString &label)
 }
 } // namespace
 
-RebaseList::RebaseList(QWidget *parent) : QAbstractScrollArea(parent)
-{
+RebaseList::RebaseList(QWidget *parent) : QAbstractScrollArea(parent) {
     setFrameShape(QFrame::NoFrame);
     connect(theme::Zoom::instance(), &theme::Zoom::changed, this, &RebaseList::relayout);
     setFocusPolicy(Qt::StrongFocus);
@@ -45,8 +42,7 @@ RebaseList::RebaseList(QWidget *parent) : QAbstractScrollArea(parent)
     connect(AvatarCache::instance(), &AvatarCache::ready, viewport(), qOverload<>(&QWidget::update));
 }
 
-void RebaseList::setItems(const QVariantList &items)
-{
+void RebaseList::setItems(const QVariantList &items) {
     m_items = items;
     for (int i = 0; i < m_items.size(); ++i) {
         QVariant &v = m_items[i];
@@ -61,46 +57,41 @@ void RebaseList::setItems(const QVariantList &items)
     emit planChanged();
 }
 
-void RebaseList::relayout()
-{
+void RebaseList::relayout() {
     verticalScrollBar()->setPageStep(viewport()->height());
-    verticalScrollBar()->setSingleStep(kRowH());
-    verticalScrollBar()->setRange(0, std::max(0, int(m_items.size()) * kRowH() - viewport()->height()));
+    verticalScrollBar()->setSingleStep(rowHeight());
+    verticalScrollBar()->setRange(0, std::max(0, int(m_items.size()) * rowHeight() - viewport()->height()));
     viewport()->update();
 }
 
-void RebaseList::resizeEvent(QResizeEvent *e)
-{
+void RebaseList::resizeEvent(QResizeEvent *e) {
     QAbstractScrollArea::resizeEvent(e);
     relayout();
 }
 
-void RebaseList::changed()
-{
+void RebaseList::changed() {
     viewport()->update();
     emit planChanged();
 }
 
-int RebaseList::rowAt(int y) const
-{
-    const int r = (y + verticalScrollBar()->value()) / kRowH();
+int RebaseList::rowAt(int y) const {
+    const int r = (y + verticalScrollBar()->value()) / rowHeight();
     return r >= 0 && r < int(m_items.size()) ? r : -1;
 }
 
-QRect RebaseList::pillRect(int row) const
-{
-    return QRect(36, row * kRowH() - verticalScrollBar()->value() + (kRowH() - 22) / 2, 70, 22);
+QRect RebaseList::pillRect(int row) const {
+    return QRect(36, row * rowHeight() - verticalScrollBar()->value() + (rowHeight() - 22) / 2, 70, 22);
 }
 
-void RebaseList::ensureVisible(int row)
-{
-    const int y = row * kRowH(), sv = verticalScrollBar()->value(), vh = viewport()->height();
-    if (y < sv) verticalScrollBar()->setValue(y);
-    else if (y + kRowH() > sv + vh) verticalScrollBar()->setValue(y + kRowH() - vh);
+void RebaseList::ensureVisible(int row) {
+    const int y = row * rowHeight(), sv = verticalScrollBar()->value(), vh = viewport()->height();
+    if (y < sv)
+        verticalScrollBar()->setValue(y);
+    else if (y + rowHeight() > sv + vh)
+        verticalScrollBar()->setValue(y + rowHeight() - vh);
 }
 
-void RebaseList::setCurrent(int i)
-{
+void RebaseList::setCurrent(int i) {
     if (m_items.isEmpty()) return;
     i = std::clamp(i, 0, int(m_items.size()) - 1);
     m_cur = i;
@@ -109,8 +100,7 @@ void RebaseList::setCurrent(int i)
     emit currentChanged(i);
 }
 
-void RebaseList::setAction(const QString &action)
-{
+void RebaseList::setAction(const QString &action) {
     if (m_cur < 0 || m_cur >= m_items.size()) return;
     QVariantMap m = m_items[m_cur].toMap();
     m.insert("action", action);
@@ -119,8 +109,7 @@ void RebaseList::setAction(const QString &action)
     emit currentChanged(m_cur);
 }
 
-void RebaseList::move(int delta)
-{
+void RebaseList::move(int delta) {
     const int to = m_cur + delta;
     if (to < 0 || to >= m_items.size()) return;
     m_items.move(m_cur, to);
@@ -128,8 +117,7 @@ void RebaseList::move(int delta)
     changed();
 }
 
-bool RebaseList::event(QEvent *e)
-{
+bool RebaseList::event(QEvent *e) {
     // Alt+↑/↓ move rows here; don't let the window's "previous/next file" shortcut take them
     if (e->type() == QEvent::ShortcutOverride) {
         auto *k = static_cast<QKeyEvent *>(e);
@@ -141,8 +129,7 @@ bool RebaseList::event(QEvent *e)
     return QAbstractScrollArea::event(e);
 }
 
-void RebaseList::keyPressEvent(QKeyEvent *e)
-{
+void RebaseList::keyPressEvent(QKeyEvent *e) {
     const bool alt = e->modifiers() & Qt::AltModifier;
     switch (e->key()) {
     case Qt::Key_Up:
@@ -158,8 +145,7 @@ void RebaseList::keyPressEvent(QKeyEvent *e)
     }
 }
 
-void RebaseList::mousePressEvent(QMouseEvent *e)
-{
+void RebaseList::mousePressEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
     const int r = rowAt(pos.y());
     if (r < 0 || e->button() != Qt::LeftButton) return;
@@ -167,9 +153,9 @@ void RebaseList::mousePressEvent(QMouseEvent *e)
     if (pillRect(r).contains(pos)) {
         QMenu menu(this);
         const QList<QPair<QString, QString>> acts{{QStringLiteral("pick"), QStringLiteral("Pick\tP")},
-                                                  {QStringLiteral("squash"), QStringLiteral("Squash into the commit below\tS")},
-                                                  {QStringLiteral("fixup"), QStringLiteral("Fixup into below, drop this message\tF")},
-                                                  {QStringLiteral("drop"), QStringLiteral("Drop\tD")}};
+            {QStringLiteral("squash"), QStringLiteral("Squash into the commit below\tS")},
+            {QStringLiteral("fixup"), QStringLiteral("Fixup into below, drop this message\tF")},
+            {QStringLiteral("drop"), QStringLiteral("Drop\tD")}};
         for (const auto &[a, text] : acts) menu.addAction(text, this, [this, a] { setAction(a); });
         menu.exec(viewport()->mapToGlobal(pillRect(r).bottomLeft()));
         return;
@@ -180,8 +166,7 @@ void RebaseList::mousePressEvent(QMouseEvent *e)
     m_dragging = false;
 }
 
-void RebaseList::mouseMoveEvent(QMouseEvent *e)
-{
+void RebaseList::mouseMoveEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
     if (m_drag < 0) {
         viewport()->setCursor(rowAt(pos.y()) >= 0 && (pos.x() < 32 || pillRect(rowAt(pos.y())).contains(pos)) ? Qt::PointingHandCursor : Qt::ArrowCursor);
@@ -192,10 +177,12 @@ void RebaseList::mouseMoveEvent(QMouseEvent *e)
     viewport()->setCursor(Qt::ClosedHandCursor);
     m_dragY = pos.y();
     const int vh = viewport()->height();
-    if (pos.y() < 10) verticalScrollBar()->setValue(verticalScrollBar()->value() - kRowH() / 2);
-    else if (pos.y() > vh - 10) verticalScrollBar()->setValue(verticalScrollBar()->value() + kRowH() / 2);
+    if (pos.y() < 10)
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - rowHeight() / 2);
+    else if (pos.y() > vh - 10)
+        verticalScrollBar()->setValue(verticalScrollBar()->value() + rowHeight() / 2);
     // move the dragged row as soon as the pointer crosses into another row
-    const int target = std::clamp((m_dragY + verticalScrollBar()->value()) / kRowH(), 0, int(m_items.size()) - 1);
+    const int target = std::clamp((m_dragY + verticalScrollBar()->value()) / rowHeight(), 0, int(m_items.size()) - 1);
     if (target != m_drag) {
         m_items.move(m_drag, target);
         m_drag = target;
@@ -206,38 +193,37 @@ void RebaseList::mouseMoveEvent(QMouseEvent *e)
     viewport()->update();
 }
 
-void RebaseList::mouseReleaseEvent(QMouseEvent *)
-{
+void RebaseList::mouseReleaseEvent(QMouseEvent *) {
     m_drag = -1;
     m_dragging = false;
     viewport()->unsetCursor();
     viewport()->update();
 }
 
-void RebaseList::paintEvent(QPaintEvent *)
-{
+void RebaseList::paintEvent(QPaintEvent *) {
     QPainter p(viewport());
     const int vw = viewport()->width(), vh = viewport()->height(), sv = verticalScrollBar()->value();
     p.fillRect(0, 0, vw, vh, theme::graphBg);
     const QFont ui = theme::uiFont(13), small = theme::uiFont(11, true), mono = theme::monoFont(12);
-    const int first = sv / kRowH();
+    const int first = sv / rowHeight();
     for (int i = first; i < m_items.size(); ++i) {
-        const int y = i * kRowH() - sv;
+        const int y = i * rowHeight() - sv;
         if (y > vh) break;
         const QVariantMap m = m_items[i].toMap();
         const QString a = m.value("action").toString(), lab = label(m);
         const bool folded = a == QLatin1String("squash") || a == QLatin1String("fixup"), drop = a == QLatin1String("drop");
-        const QRect row(0, y, vw, kRowH());
+        const QRect row(0, y, vw, rowHeight());
         if (i == m_cur) {
             p.fillRect(row, m_dragging ? theme::field : theme::selection);
-            p.fillRect(0, y, 3, kRowH(), theme::accent);
+            p.fillRect(0, y, 3, rowHeight(), theme::accent);
         }
-        p.fillRect(0, y + kRowH() - 1, vw, 1, theme::border);
+        p.fillRect(0, y + rowHeight() - 1, vw, 1, theme::border);
+
         // grip
         p.setPen(Qt::NoPen);
         p.setBrush(theme::faint);
         for (int dx : {0, 5})
-            for (int dy : {-5, 0, 5}) p.drawEllipse(QPointF(16 + dx, y + kRowH() / 2.0 + dy), 1.4, 1.4);
+            for (int dy : {-5, 0, 5}) p.drawEllipse(QPointF(16 + dx, y + rowHeight() / 2.0 + dy), 1.4, 1.4);
         // action pill
         p.setRenderHint(QPainter::Antialiasing);
         const QRect pr = pillRect(i);
@@ -248,34 +234,36 @@ void RebaseList::paintEvent(QPaintEvent *)
         p.setFont(small);
         p.setPen(c);
         p.drawText(pr, Qt::AlignCenter, lab + QStringLiteral(" ▾"));
+
         // avatar + sha on the right
         const int ax = vw - 108;
         AvatarCache::paint(&p, QRectF(ax, y + 10, 20, 20), m.value("email").toString(), m.value("author").toString(), QColor(), 0);
         p.setRenderHint(QPainter::Antialiasing, false);
         p.setFont(mono);
         p.setPen(theme::faint);
-        p.drawText(QRect(ax + 28, y, 70, kRowH()), Qt::AlignVCenter, m.value("id").toString().left(7));
+        p.drawText(QRect(ax + 28, y, 70, rowHeight()), Qt::AlignVCenter, m.value("id").toString().left(7));
+
         // summary; folded rows are indented with an arrow into the commit below
         int tx = pr.right() + 14;
         if (folded) {
             p.setPen(c);
             p.setFont(ui);
-            p.drawText(QRect(tx, y, 20, kRowH()), Qt::AlignVCenter, QStringLiteral("↓"));
+            p.drawText(QRect(tx, y, 20, rowHeight()), Qt::AlignVCenter, QStringLiteral("↓"));
             tx += 20;
         }
         QFont f = ui;
         f.setStrikeOut(drop);
         p.setFont(f);
-        p.setPen(drop ? theme::faint : a == QLatin1String("fixup") ? theme::dim : theme::text);
+        p.setPen(drop ? theme::faint : a == QLatin1String("fixup") ? theme::dim
+                                                                   : theme::text);
         const QString summary = m.value("message").toString().section(QLatin1Char('\n'), 0, 0);
-        p.drawText(QRect(tx, y, ax - tx - 12, kRowH()), Qt::AlignVCenter, QFontMetrics(f).elidedText(summary, Qt::ElideRight, ax - tx - 12));
+        p.drawText(QRect(tx, y, ax - tx - 12, rowHeight()), Qt::AlignVCenter, QFontMetrics(f).elidedText(summary, Qt::ElideRight, ax - tx - 12));
     }
 }
 
 // ---------- RebaseView ----------
 
-RebaseView::RebaseView(QWidget *parent) : QWidget(parent)
-{
+RebaseView::RebaseView(QWidget *parent) : QWidget(parent) {
     auto *bar = new QWidget(this);
     bar->setFixedHeight(theme::z(44));
     bar->setAutoFillBackground(true);
@@ -341,19 +329,17 @@ RebaseView::RebaseView(QWidget *parent) : QWidget(parent)
     });
 }
 
-void RebaseView::start(const QString &base, const QString &branch, const QVariantList &items)
-{
+void RebaseView::start(const QString &base, const QString &branch, const QVariantList &items) {
     m_base = base;
     m_title->setText(QStringLiteral("Rebase %1 · %2 commits onto %3")
-                         .arg(branch)
-                         .arg(items.size())
-                         .arg(base.isEmpty() ? QStringLiteral("the root") : base.left(7)));
+            .arg(branch)
+            .arg(items.size())
+            .arg(base.isEmpty() ? QStringLiteral("the root") : base.left(7)));
     m_list->setItems(items);
     m_list->setFocus();
 }
 
-void RebaseView::onCurrent(int row)
-{
+void RebaseView::onCurrent(int row) {
     if (row < 0 || row >= m_list->items().size()) return;
     const QVariantMap m = m_list->items()[row].toMap();
     const QString a = m.value("action").toString();
@@ -362,14 +348,13 @@ void RebaseView::onCurrent(int row)
     m_msg->setPlainText(m.value("message").toString());
     m_loadingMsg = false;
     m_msg->setReadOnly(!editable);
-    m_msgHint->setText(editable ? QStringLiteral("Message (edit to reword)")
+    m_msgHint->setText(editable                       ? QStringLiteral("Message (edit to reword)")
                        : a == QLatin1String("squash") ? QStringLiteral("This message is appended to the commit below.")
                        : a == QLatin1String("fixup")  ? QStringLiteral("This message is discarded; the changes go into the commit below.")
                                                       : QStringLiteral("This commit and its changes are dropped."));
 }
 
-void RebaseView::updateSummary()
-{
+void RebaseView::updateSummary() {
     const QVariantList &items = m_list->items();
     int drops = 0, folds = 0, rewords = 0;
     bool moved = false, bad = false;
@@ -377,15 +362,19 @@ void RebaseView::updateSummary()
     for (int i = 0; i < items.size(); ++i) {
         const QVariantMap m = items[i].toMap();
         const QString a = m.value("action").toString();
-        if (a == QLatin1String("drop")) ++drops;
+        if (a == QLatin1String("drop"))
+            ++drops;
         else {
             lastKept = a;
-            if (a != QLatin1String("pick")) ++folds;
-            else if (label(m) == QLatin1String("Reword")) ++rewords;
+            if (a != QLatin1String("pick"))
+                ++folds;
+            else if (label(m) == QLatin1String("Reword"))
+                ++rewords;
         }
         if (m.value("index", i).toInt() != i) moved = true;
     }
     bad = !lastKept.isEmpty() && lastKept != QLatin1String("pick");
+
     // order changed?
     QStringList parts;
     if (moved) parts << QStringLiteral("reordered");

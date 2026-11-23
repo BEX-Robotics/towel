@@ -37,8 +37,7 @@
 
 namespace {
 
-void setBg(QWidget *w, const QColor &c)
-{
+void setBg(QWidget *w, const QColor &c) {
     w->setAutoFillBackground(true);
     QPalette p = w->palette();
     p.setColor(QPalette::Window, c);
@@ -46,12 +45,10 @@ void setBg(QWidget *w, const QColor &c)
 }
 
 // The app logo, painted (no SVG plugin needed).
-class Logo : public QWidget
-{
+class Logo : public QWidget {
 public:
     explicit Logo(int size, QWidget *parent = nullptr) : QWidget(parent) { setFixedSize(size, size); }
-    static void draw(QPainter &p, const QRectF &r)
-    {
+    static void draw(QPainter &p, const QRectF &r) {
         p.save();
         p.setRenderHint(QPainter::Antialiasing);
         p.translate(r.topLeft());
@@ -76,36 +73,34 @@ public:
     }
 
 protected:
-    void paintEvent(QPaintEvent *) override
-    {
+    void paintEvent(QPaintEvent *) override {
         QPainter p(this);
         draw(p, rect());
     }
 };
 
-QPushButton *button(const QString &text, const QString &tip, QWidget *parent)
-{
+QPushButton *button(const QString &text, const QString &tip, QWidget *parent) {
     auto *b = new QPushButton(text, parent);
     b->setToolTip(tip);
     b->setCursor(Qt::PointingHandCursor);
     b->setFocusPolicy(Qt::NoFocus);
+
     return b;
 }
 
-QLabel *label(QWidget *parent, int px, bool bold, const QColor &c)
-{
+QLabel *label(QWidget *parent, int px, bool bold, const QColor &c) {
     auto *l = new QLabel(parent);
     l->setFont(theme::uiFont(px, bold));
     QPalette p = l->palette();
     p.setColor(QPalette::WindowText, c);
     l->setPalette(p);
+
     return l;
 }
 
 } // namespace
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::instance())
-{
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::instance()) {
     setWindowTitle(QStringLiteral("Towel"));
     QPixmap icon(128, 128);
     icon.fill(Qt::transparent);
@@ -187,8 +182,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     // settings
     QSettings s;
     if (s.contains("splitter")) m_split->restoreState(s.value("splitter").toByteArray());
-    if (s.contains("geometry")) restoreGeometry(s.value("geometry").toByteArray());
-    else resize(1560, 960);
+    if (s.contains("geometry"))
+        restoreGeometry(s.value("geometry").toByteArray());
+    else
+        resize(1560, 960);
     m_full = s.value("diffFull", false).toBool();
     m_splitDiff = s.value("diffSplit", false).toBool();
     m_wrap = s.value("diffWrap", false).toBool();
@@ -235,11 +232,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     auto *detailsTimer = new QTimer(this);
     detailsTimer->setSingleShot(true);
     detailsTimer->setInterval(35);
-    connect(detailsTimer, &QTimer::timeout, this, [this] { m_repo->loadDetails(m_selectedId); });
+    connect(detailsTimer, &QTimer::timeout, this, [this] { m_repo->loadDetails(m_selectedID); });
     connect(m_commits, &CommitView::currentChanged, this, [this, detailsTimer](int row) {
         const QString id = m_repo->commits()->idAt(row);
-        if (id.isEmpty() || id == m_selectedId) return;
-        m_selectedId = id;
+        if (id.isEmpty() || id == m_selectedID) return;
+        m_selectedID = id;
         if (!m_openFile.isEmpty()) closeDiff();
         if (id == QLatin1String("WIP")) {
             m_right->setCurrentWidget(m_commitPanel);
@@ -269,7 +266,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     });
     connect(m_repo, &Repo::committed, m_commitPanel, &CommitPanel::clearMessage);
     connect(m_commitPanel, &CommitPanel::amendToggled, this, [this](bool on) {
-        if (on) m_commitPanel->setAmendInfo(m_repo->headMessage(), m_repo->rewordState(m_repo->headId()) == 2);
+        if (on) m_commitPanel->setAmendInfo(m_repo->headMessage(), m_repo->rewordState(m_repo->headID()) == 2);
     });
     connect(m_sidebar->list(), &SideList::jumpTo, this, [this](const QString &id) {
         const int i = m_repo->commits()->indexOf(id);
@@ -319,6 +316,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     // shortcuts
     auto sc = [this](const QKeySequence &k, auto fn) { connect(new QShortcut(k, this), &QShortcut::activated, this, fn); };
     sc(QKeySequence::Undo, [this] { m_repo->undo(); });
+
     // zoom, for anyone who wants it bigger: Ctrl+scroll, Ctrl+= / Ctrl+-, Ctrl+0
     sc(QKeySequence::ZoomIn, [this] { zoomBy(1); });
     sc(QKeySequence(QStringLiteral("Ctrl+=")), [this] { zoomBy(1); });
@@ -332,8 +330,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     sc(QKeySequence(QStringLiteral("Ctrl+R")), [this] { m_repo->refresh(); });
     sc(QKeySequence(QStringLiteral("Ctrl+Q")), [] { qApp->quit(); });
     sc(QKeySequence(QStringLiteral("Esc")), [this] {
-        if (!m_openFile.isEmpty()) closeDiff();
-        else if (m_search->hasFocus()) m_search->clear();
+        if (!m_openFile.isEmpty())
+            closeDiff();
+        else if (m_search->hasFocus())
+            m_search->clear();
     });
     sc(QKeySequence(QStringLiteral("Alt+Down")), [this] { stepFile(1); });
     sc(QKeySequence(QStringLiteral("Ctrl+Return")), [this] {
@@ -347,30 +347,26 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     connect(poll, &QTimer::timeout, this, [this] {
         // active: every 4 s; in the background the .git watcher catches commits, pushes
         // and checkouts, and this slower poll catches plain file edits
-        if (isActiveWindow() || ++m_idleTicks % 8 == 0) {
+        if (isActiveWindow() || ++m_idleTicks % 8 == 0)
             m_repo->checkChanged();
-        }
     });
     poll->start();
     updateOp();
 }
 
-bool MainWindow::event(QEvent *e)
-{
+bool MainWindow::event(QEvent *e) {
     if (e->type() == QEvent::WindowActivate) m_repo->checkChanged();
     return QMainWindow::event(e);
 }
 
-void MainWindow::closeEvent(QCloseEvent *e)
-{
+void MainWindow::closeEvent(QCloseEvent *e) {
     QSettings s;
     s.setValue("splitter", m_split->saveState());
     s.setValue("geometry", saveGeometry());
     QMainWindow::closeEvent(e);
 }
 
-QWidget *MainWindow::buildTopBar()
-{
+QWidget *MainWindow::buildTopBar() {
     auto *bar = new QWidget(this);
     bar->setFixedHeight(theme::z(46));
     setBg(bar, theme::topbar);
@@ -386,7 +382,7 @@ QWidget *MainWindow::buildTopBar()
         for (const QString &path : recent) {
             if (path == m_repo->path()) continue;
             QAction *a = menu.addAction(QDir(path).dirName() + QStringLiteral("    ") + QDir::toNativeSeparators(path), this, [this, path] {
-                m_selectedId.clear();
+                m_selectedID.clear();
                 closeDiff();
                 m_repo->open(path);
             });
@@ -441,8 +437,7 @@ QWidget *MainWindow::buildTopBar()
     return bar;
 }
 
-QWidget *MainWindow::buildStatusStrip()
-{
+QWidget *MainWindow::buildStatusStrip() {
     m_strip = new QWidget(this);
     auto *v = new QVBoxLayout(m_strip);
     v->setContentsMargins(14, 4, 10, 6);
@@ -474,11 +469,11 @@ QWidget *MainWindow::buildStatusStrip()
     m_opLog->setFixedHeight(theme::z(140));
     m_opLog->hide();
     v->addWidget(m_opLog);
+
     return m_strip;
 }
 
-void MainWindow::updateOp()
-{
+void MainWindow::updateOp() {
     const bool active = m_repo->opRunning() || !m_repo->opLabel().isEmpty();
     m_strip->setVisible(active);
     if (!active) {
@@ -486,12 +481,16 @@ void MainWindow::updateOp()
         return;
     }
     const bool running = m_repo->opRunning(), failed = m_repo->opFailed();
-    setBg(m_strip, failed ? QColor(0x3a, 0x22, 0x26) : running ? theme::panel : QColor(0x1e, 0x33, 0x26));
-    m_opIcon->setText(running ? QStringLiteral("⟳") : failed ? QStringLiteral("✕") : QStringLiteral("✓"));
+    setBg(m_strip, failed ? QColor(0x3a, 0x22, 0x26) : running ? theme::panel
+                                                               : QColor(0x1e, 0x33, 0x26));
+    m_opIcon->setText(running ? QStringLiteral("⟳") : failed ? QStringLiteral("✕")
+                                                             : QStringLiteral("✓"));
     QPalette pal = m_opIcon->palette();
-    pal.setColor(QPalette::WindowText, running ? theme::accent : failed ? theme::red : theme::green);
+    pal.setColor(QPalette::WindowText, running ? theme::accent : failed ? theme::red
+                                                                        : theme::green);
     m_opIcon->setPalette(pal);
-    m_opText->setText(m_repo->opLabel() + (running ? QStringLiteral("…") : failed ? QStringLiteral(" failed") : QStringLiteral(" done")));
+    m_opText->setText(m_repo->opLabel() + (running ? QStringLiteral("…") : failed ? QStringLiteral(" failed")
+                                                                                  : QStringLiteral(" done")));
     const QStringList lines = m_repo->opOutput().trimmed().split(QLatin1Char('\n'));
     m_opLast->setText(lines.isEmpty() ? QString() : lines.last());
     m_opLog->setPlainText(m_repo->opOutput());
@@ -502,8 +501,7 @@ void MainWindow::updateOp()
     for (auto *b : {m_fetch, m_pull, m_push}) b->setEnabled(!running);
 }
 
-void MainWindow::updateBranchChip()
-{
+void MainWindow::updateBranchChip() {
     QString html = QStringLiteral("<b>%1</b>").arg(m_repo->head().toHtmlEscaped());
     if (m_repo->ahead()) html += QStringLiteral("&nbsp;&nbsp;<span style='color:#4cc26b'>↑%1</span>").arg(m_repo->ahead());
     if (m_repo->behind()) html += QStringLiteral("&nbsp;<span style='color:#e0a43a'>↓%1</span>").arg(m_repo->behind());
@@ -514,8 +512,7 @@ void MainWindow::updateBranchChip()
     m_push->setToolTip(m_repo->upstream().isEmpty() ? QStringLiteral("git push (sets upstream)") : QStringLiteral("git push → ") + m_repo->upstream());
 }
 
-void MainWindow::onLoaded()
-{
+void MainWindow::onLoaded() {
     setWindowTitle(m_repo->name() + QStringLiteral(" — Towel"));
     m_repoBtn->setText(m_repo->name());
     m_repoBtn->setToolTip(m_repo->path() + QStringLiteral("\nClick for recent repositories · Ctrl+O to open another"));
@@ -531,45 +528,49 @@ void MainWindow::onLoaded()
     updateBranchChip();
     m_sidebar->list()->setData(m_repo->branches(), m_repo->tags(), m_repo->stashes());
     if (m_openFile.isEmpty()) m_center->setCurrentWidget(m_commits);
-    int i = m_selectedId.isEmpty() ? -1 : m_repo->commits()->indexOf(m_selectedId);
+    int i = m_selectedID.isEmpty() ? -1 : m_repo->commits()->indexOf(m_selectedID);
     if (i < 0) i = 0;
-    m_selectedId = m_repo->commits()->idAt(i);
+    m_selectedID = m_repo->commits()->idAt(i);
     m_commits->setCurrent(i);
     m_commitPanel->setRepoKey(m_repo->path());
     m_commitPanel->setBranch(m_repo->detached() ? QString() : m_repo->head());
-    const bool wip = m_selectedId == QLatin1String("WIP");
+    const bool wip = m_selectedID == QLatin1String("WIP");
     m_right->setCurrentWidget(wip ? static_cast<QWidget *>(m_commitPanel) : m_details);
-    if (wip) m_repo->loadStatus();
-    else m_repo->loadDetails(m_selectedId);
+    if (wip)
+        m_repo->loadStatus();
+    else
+        m_repo->loadDetails(m_selectedID);
     if (!m_search->text().trimmed().isEmpty()) m_repo->commits()->search(m_search->text());
     if (!m_openFile.isEmpty() && m_openMode.isEmpty())
-        m_repo->loadDiff(m_selectedId, m_openFile.value("path").toString(), m_openFile.value("oldPath").toString(), m_full);
+        m_repo->loadDiff(m_selectedID, m_openFile.value("path").toString(), m_openFile.value("oldPath").toString(), m_full);
     if (m_center->currentWidget() == m_commits) m_commits->setFocus();
 }
 
-void MainWindow::showFile(const QVariantMap &f, const QString &mode)
-{
+void MainWindow::showFile(const QVariantMap &f, const QString &mode) {
     const bool reload = !m_openFile.isEmpty() && mode == m_openMode && f.value("path") == m_openFile.value("path");
     if (reload) m_diff->area()->keepPlace();
-    m_diff->area()->setStaging(mode == QLatin1String("unstaged") ? 1 : mode == QLatin1String("staged") ? 2 : 0);
+    m_diff->area()->setStaging(mode == QLatin1String("unstaged") ? 1 : mode == QLatin1String("staged") ? 2
+                                                                                                       : 0);
     if (!mode.isEmpty() && !reload) {
         QWidget *fw = QApplication::focusWidget();
         if (!qobject_cast<QLineEdit *>(fw) && !qobject_cast<QPlainTextEdit *>(fw)) m_diff->area()->setFocus();
     }
     m_openFile = f;
     m_openMode = mode;
-    if (mode.isEmpty()) m_details->setOpenPath(f.value("path").toString());
-    else m_commitPanel->setOpenFile(mode, f.value("path").toString());
-    m_diff->setModeLabel(mode == QLatin1String("staged") ? QStringLiteral("Staged") : mode == QLatin1String("unstaged") ? QStringLiteral("Unstaged") : QString());
+    if (mode.isEmpty())
+        m_details->setOpenPath(f.value("path").toString());
+    else
+        m_commitPanel->setOpenFile(mode, f.value("path").toString());
+    m_diff->setModeLabel(mode == QLatin1String("staged") ? QStringLiteral("Staged") : mode == QLatin1String("unstaged") ? QStringLiteral("Unstaged")
+                                                                                                                        : QString());
     m_center->setCurrentWidget(m_diff);
-    const QString id = mode.isEmpty() ? m_selectedId : QStringLiteral("WIP:") + mode;
+    const QString id = mode.isEmpty() ? m_selectedID : QStringLiteral("WIP:") + mode;
     m_repo->loadDiff(id, f.value("path").toString(), f.value("oldPath").toString(), m_full);
 }
 
 // Status reloaded (after staging, committing, or selecting WIP): update the
 // panel and keep the open diff sensible.
-void MainWindow::onStatus()
-{
+void MainWindow::onStatus() {
     m_commitPanel->setStatus(m_repo->status());
     if (m_openMode.isEmpty() || m_openFile.isEmpty()) return;
     const QVariantList files = m_commitPanel->files(m_openMode);
@@ -586,8 +587,7 @@ void MainWindow::onStatus()
 // ---------- branches, tags, stashes ----------
 
 void MainWindow::gitThen(const QString &label, const QStringList &args, const QString &retryIf, const QString &question,
-                         const QStringList &retry, const QString &undoLabel, const QString &undoMode)
-{
+    const QStringList &retry, const QString &undoLabel, const QString &undoMode) {
     if (m_repo->opRunning()) return;
     if (!retryIf.isEmpty()) {
         auto *once = new QObject(this);
@@ -600,8 +600,7 @@ void MainWindow::gitThen(const QString &label, const QStringList &args, const QS
     m_repo->run(label, args, undoLabel, undoMode);
 }
 
-void MainWindow::checkout(const QVariantMap &e)
-{
+void MainWindow::checkout(const QVariantMap &e) {
     const QString kind = e.value("kind").toString(), name = e.value("name").toString();
     if (kind == QLatin1String("local")) {
         if (!e.value("current").toBool()) gitThen(QStringLiteral("Checkout ") + name, {QStringLiteral("switch"), name});
@@ -617,42 +616,41 @@ void MainWindow::checkout(const QVariantMap &e)
         }
         return gitThen(QStringLiteral("Checkout ") + local, {QStringLiteral("switch"), QStringLiteral("-c"), local, QStringLiteral("--track"), name});
     }
+
     // a commit or tag: detached HEAD
     gitThen(QStringLiteral("Checkout ") + e.value("id").toString().left(8),
-            {QStringLiteral("switch"), QStringLiteral("--detach"), e.value("id").toString()});
+        {QStringLiteral("switch"), QStringLiteral("--detach"), e.value("id").toString()});
 }
 
-void MainWindow::createBranch(const QString &at)
-{
+void MainWindow::createBranch(const QString &at) {
     bool ok = false;
     const QString name = QInputDialog::getText(this, QStringLiteral("New branch"), QStringLiteral("Branch name (created at %1, then checked out):").arg(at.left(8)),
-                                               QLineEdit::Normal, QString(), &ok).trimmed();
+        QLineEdit::Normal, QString(), &ok)
+                             .trimmed();
     if (!ok || name.isEmpty()) return;
     gitThen(QStringLiteral("Create branch ") + name, {QStringLiteral("switch"), QStringLiteral("-c"), name, at});
 }
 
-void MainWindow::deleteBranch(const QString &name)
-{
+void MainWindow::deleteBranch(const QString &name) {
     if (QMessageBox::question(this, QStringLiteral("Delete branch"), QStringLiteral("Delete the local branch \"%1\"?").arg(name)) != QMessageBox::Yes)
         return;
     gitThen(QStringLiteral("Delete branch ") + name, {QStringLiteral("branch"), QStringLiteral("-d"), name}, QStringLiteral("not fully merged"),
-            QStringLiteral("\"%1\" has commits that are not merged anywhere. Delete it anyway? (git reflog keeps them for a while.)").arg(name),
-            {QStringLiteral("branch"), QStringLiteral("-D"), name});
+        QStringLiteral("\"%1\" has commits that are not merged anywhere. Delete it anyway? (git reflog keeps them for a while.)").arg(name),
+        {QStringLiteral("branch"), QStringLiteral("-D"), name});
 }
 
-void MainWindow::stashChanges()
-{
+void MainWindow::stashChanges() {
     bool ok = false;
     const QString msg = QInputDialog::getText(this, QStringLiteral("Stash changes"), QStringLiteral("Stash all changes, including untracked files. Message (optional):"),
-                                              QLineEdit::Normal, QString(), &ok).trimmed();
+        QLineEdit::Normal, QString(), &ok)
+                            .trimmed();
     if (!ok) return;
     QStringList args{QStringLiteral("stash"), QStringLiteral("push"), QStringLiteral("--include-untracked")};
     if (!msg.isEmpty()) args << QStringLiteral("-m") << msg;
     gitThen(QStringLiteral("Stash"), args);
 }
 
-void MainWindow::startRebase(const QString &from)
-{
+void MainWindow::startRebase(const QString &from) {
     QString err, base;
     const QVariantList items = m_repo->rebasePlanFrom(from, &err, &base);
     if (!err.isEmpty()) {
@@ -664,8 +662,7 @@ void MainWindow::startRebase(const QString &from)
     m_center->setCurrentWidget(m_rebase);
 }
 
-void MainWindow::commitMenu(int row, const QPoint &pos)
-{
+void MainWindow::commitMenu(int row, const QPoint &pos) {
     const QString id = m_repo->commits()->idAt(row);
     if (id.isEmpty()) return;
     QMenu menu(this);
@@ -682,6 +679,7 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
         menu.exec(pos);
         return;
     }
+
     // branches pointing here
     QList<QVariantMap> here;
     for (const QVariant &v : m_repo->branches())
@@ -699,15 +697,14 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
         if (ok && !name.isEmpty()) gitThen(QStringLiteral("Create tag ") + name, {QStringLiteral("tag"), name, id});
     });
     menu.addSeparator();
-    const QString shortId = id.left(8);
-    const bool onHead = m_repo->commits()->indexOf(id) >= 0 && id == m_repo->headId();
-    if (!onHead) {
-        menu.addAction(QStringLiteral("Cherry-pick onto current branch"), this, [this, id, shortId] {
-            gitThen(QStringLiteral("Cherry-pick ") + shortId, {QStringLiteral("cherry-pick"), id}, {}, {}, {}, QStringLiteral("cherry-pick"));
+    const QString shortID = id.left(8);
+    const bool onHead = m_repo->commits()->indexOf(id) >= 0 && id == m_repo->headID();
+    if (!onHead)
+        menu.addAction(QStringLiteral("Cherry-pick onto current branch"), this, [this, id, shortID] {
+            gitThen(QStringLiteral("Cherry-pick ") + shortID, {QStringLiteral("cherry-pick"), id}, {}, {}, {}, QStringLiteral("cherry-pick"));
         });
-    }
-    menu.addAction(QStringLiteral("Revert (new commit that undoes it)"), this, [this, id, shortId] {
-        gitThen(QStringLiteral("Revert ") + shortId, {QStringLiteral("revert"), QStringLiteral("--no-edit"), id}, {}, {}, {}, QStringLiteral("revert"));
+    menu.addAction(QStringLiteral("Revert (new commit that undoes it)"), this, [this, id, shortID] {
+        gitThen(QStringLiteral("Revert ") + shortID, {QStringLiteral("revert"), QStringLiteral("--no-edit"), id}, {}, {}, {}, QStringLiteral("revert"));
     });
     if (!onHead && !m_repo->branch().isEmpty()) {
         QMenu *reset = menu.addMenu(QStringLiteral("Reset %1 to here").arg(m_repo->branch()));
@@ -719,9 +716,9 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
         });
         reset->addAction(QStringLiteral("Hard: discard all changes…"), this, [this, id] {
             if (QMessageBox::warning(this, QStringLiteral("Hard reset"),
-                                     QStringLiteral("Reset %1 to %2 and DISCARD all uncommitted changes? Uncommitted work cannot be recovered.")
-                                         .arg(m_repo->branch(), id.left(8)),
-                                     QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) == QMessageBox::Yes)
+                    QStringLiteral("Reset %1 to %2 and DISCARD all uncommitted changes? Uncommitted work cannot be recovered.")
+                        .arg(m_repo->branch(), id.left(8)),
+                    QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) == QMessageBox::Yes)
                 gitThen(QStringLiteral("Reset (hard)"), {QStringLiteral("reset"), QStringLiteral("--hard"), id}, {}, {}, {}, QStringLiteral("reset"));
         });
     }
@@ -735,8 +732,7 @@ void MainWindow::commitMenu(int row, const QPoint &pos)
     menu.exec(pos);
 }
 
-void MainWindow::refMenu(const QVariantMap &e, const QPoint &pos)
-{
+void MainWindow::refMenu(const QVariantMap &e, const QPoint &pos) {
     const QString kind = e.value("kind").toString(), name = e.value("name").toString(), id = e.value("id").toString();
     QMenu menu(this);
     if (kind == QLatin1String("local") || kind == QLatin1String("remote")) {
@@ -771,12 +767,11 @@ void MainWindow::refMenu(const QVariantMap &e, const QPoint &pos)
     }
     menu.addSeparator();
     menu.addAction(kind == QLatin1String("stash") ? QStringLiteral("Copy SHA") : QStringLiteral("Copy name"), this,
-                   [this, kind, name, id] { m_repo->copy(kind == QLatin1String("stash") ? id : name); });
+        [this, kind, name, id] { m_repo->copy(kind == QLatin1String("stash") ? id : name); });
     menu.exec(pos);
 }
 
-void MainWindow::zoomBy(int steps)
-{
+void MainWindow::zoomBy(int steps) {
     // 10% steps on a log scale, so in and out are symmetric; 0 resets
     const double z = steps == 0 ? 1.0 : theme::zoom() * std::pow(1.1, steps);
     theme::setZoom(std::abs(z - 1.0) < 0.03 ? 1.0 : z);
@@ -784,8 +779,7 @@ void MainWindow::zoomBy(int steps)
     QToolTip::showText(mapToGlobal(rect().center()), QStringLiteral("Zoom %1%").arg(qRound(theme::zoom() * 100)), this, {}, 1200);
 }
 
-bool MainWindow::eventFilter(QObject *o, QEvent *e)
-{
+bool MainWindow::eventFilter(QObject *o, QEvent *e) {
     if (e->type() == QEvent::Wheel) {
         auto *we = static_cast<QWheelEvent *>(e);
         if (we->modifiers() & Qt::ControlModifier) {
@@ -801,16 +795,14 @@ bool MainWindow::eventFilter(QObject *o, QEvent *e)
     return QMainWindow::eventFilter(o, e);
 }
 
-void MainWindow::updateUndo()
-{
+void MainWindow::updateUndo() {
     const QString u = m_repo->undoLabel(), r = m_repo->redoLabel();
     m_undoBtn->setEnabled(!u.isEmpty());
     m_undoBtn->setToolTip(u.isEmpty() ? QStringLiteral("Nothing to undo")
                                       : QStringLiteral("Undo %1 (Ctrl+Z)%2").arg(u, r.isEmpty() ? QString() : QStringLiteral("\nRedo %1: Ctrl+Shift+Z").arg(r)));
 }
 
-void MainWindow::closeDiff()
-{
+void MainWindow::closeDiff() {
     if (m_openFile.isEmpty()) return;
     m_openFile.clear();
     m_openMode.clear();
@@ -821,8 +813,7 @@ void MainWindow::closeDiff()
     m_commits->setFocus();
 }
 
-void MainWindow::stepFile(int delta)
-{
+void MainWindow::stepFile(int delta) {
     const QVariantList files = m_openMode.isEmpty() ? m_repo->details().value("files").toList() : m_commitPanel->files(m_openMode);
     if (m_openFile.isEmpty() || files.isEmpty()) return;
     int i = 0;
@@ -832,18 +823,16 @@ void MainWindow::stepFile(int delta)
     showFile(files[i].toMap(), m_openMode);
 }
 
-void MainWindow::openDialog()
-{
+void MainWindow::openDialog() {
     const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("Open a git repository"), m_repo->path());
     if (!dir.isEmpty()) {
-        m_selectedId.clear();
+        m_selectedID.clear();
         closeDiff();
         m_repo->open(dir);
     }
 }
 
-void MainWindow::searchNext(bool back)
-{
+void MainWindow::searchNext(bool back) {
     const auto &hits = m_repo->commits()->hits();
     if (hits.isEmpty()) return;
     m_hitPos = (m_hitPos + (back ? -1 : 1) + int(hits.size())) % int(hits.size());
@@ -851,8 +840,7 @@ void MainWindow::searchNext(bool back)
     m_hitLabel->setText(QStringLiteral("%1 / %2").arg(m_hitPos + 1).arg(hits.size()));
 }
 
-void MainWindow::editMessage()
-{
+void MainWindow::editMessage() {
     const QVariantMap d = m_repo->details();
     const QString id = d.value("id").toString();
     const int state = m_repo->rewordState(id);
@@ -904,40 +892,56 @@ void MainWindow::editMessage()
     if (dlg.exec() == QDialog::Accepted) m_repo->reword(id, edit->toPlainText());
 }
 
-void MainWindow::runDemo()
-{
+// Dev aid: letters as plain keys, '<' and '>' as Alt+Up / Alt+Down, into the
+// diff or the rebase list, whichever is showing.
+void MainWindow::sendDemoKeys(const QString &keys) {
+    QWidget *target = m_center->currentWidget() == m_rebase ? static_cast<QWidget *>(m_rebase->findChild<RebaseList *>()) : m_diff->area();
+    for (QChar c : keys) {
+        const bool move = c == QLatin1Char('<') || c == QLatin1Char('>');
+        const int key = move ? (c == QLatin1Char('<') ? Qt::Key_Up : Qt::Key_Down) : Qt::Key_A + (c.toUpper().unicode() - 'A');
+        QKeyEvent ev(QEvent::KeyPress, key, move ? Qt::AltModifier : Qt::NoModifier, move ? QString() : QString(c));
+        QApplication::sendEvent(target, &ev);
+    }
+}
+
+void MainWindow::runDemo() {
     // TOWEL_DEMO_SCRIPT="stage:a.txt;open:staged:a.txt;key:jjs;commit:message" runs steps 900 ms apart
     const QStringList steps = qEnvironmentVariable("TOWEL_DEMO_SCRIPT").split(QLatin1Char(';'), Qt::SkipEmptyParts);
     for (int k = 0; k < steps.size(); ++k) {
         QTimer::singleShot(1500 + 900 * k, this, [this, step = steps[k]] {
             const QString arg = step.section(QLatin1Char(':'), 1);
-            if (step.startsWith(QLatin1String("stage:"))) m_repo->stage({arg});
-            else if (step.startsWith(QLatin1String("unstage:"))) m_repo->unstage({arg});
-            else if (step == QLatin1String("stageall")) m_repo->stageAll();
-            else if (step == QLatin1String("undo")) m_repo->undo();
-            else if (step.startsWith(QLatin1String("rebase:"))) startRebase(arg); // then key: steps go to the list
-            else if (step == QLatin1String("rebasego")) m_rebase->findChildren<QPushButton *>().last()->click();
+            if (step.startsWith(QLatin1String("stage:")))
+                m_repo->stage({arg});
+            else if (step.startsWith(QLatin1String("unstage:")))
+                m_repo->unstage({arg});
+            else if (step == QLatin1String("stageall"))
+                m_repo->stageAll();
+            else if (step == QLatin1String("undo"))
+                m_repo->undo();
+            else if (step.startsWith(QLatin1String("rebase:")))
+                startRebase(arg); // then key: steps go to the list
+            else if (step == QLatin1String("rebasego"))
+                m_rebase->findChildren<QPushButton *>().last()->click();
             else if (step.startsWith(QLatin1String("pick:")))
                 gitThen(QStringLiteral("Cherry-pick"), {QStringLiteral("cherry-pick"), arg}, {}, {}, {}, QStringLiteral("cherry-pick"));
             else if (step.startsWith(QLatin1String("mixed:")))
                 gitThen(QStringLiteral("Reset (mixed)"), {QStringLiteral("reset"), QStringLiteral("--mixed"), arg}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--mixed"));
             else if (step.startsWith(QLatin1String("checkout:"))) // checkout:remote:origin/x
                 checkout({{"kind", arg.section(QLatin1Char(':'), 0, 0)}, {"name", arg.section(QLatin1Char(':'), 1)}});
-            else if (step == QLatin1String("redo")) m_repo->redo();
-            else if (step.startsWith(QLatin1String("amend:"))) m_repo->commit(arg, true);
-            else if (step == QLatin1String("unstageall")) m_repo->unstageAll();
-            else if (step.startsWith(QLatin1String("commit:"))) m_repo->commit(arg, false);
+            else if (step == QLatin1String("redo"))
+                m_repo->redo();
+            else if (step.startsWith(QLatin1String("amend:")))
+                m_repo->commit(arg, true);
+            else if (step == QLatin1String("unstageall"))
+                m_repo->unstageAll();
+            else if (step.startsWith(QLatin1String("commit:")))
+                m_repo->commit(arg, false);
             else if (step.startsWith(QLatin1String("rows:"))) // rows:4-9 selects diff rows (header rows count)
                 m_diff->area()->selectRows(arg.section(QLatin1Char('-'), 0, 0).toInt(), arg.section(QLatin1Char('-'), 1).toInt());
-            else if (step.startsWith(QLatin1String("zoom:"))) zoomBy(arg.toInt()); // zoom:3 = three Ctrl+scroll notches
+            else if (step.startsWith(QLatin1String("zoom:")))
+                zoomBy(arg.toInt());                         // zoom:3 = three Ctrl+scroll notches
             else if (step.startsWith(QLatin1String("key:"))) // e.g. key:jjs: keystrokes into the diff
-                for (QChar c : arg) {
-                    const bool mv = c == QLatin1Char('<') || c == QLatin1Char('>'); // Alt+Up / Alt+Down
-                    QKeyEvent ev(QEvent::KeyPress, mv ? (c == QLatin1Char('<') ? Qt::Key_Up : Qt::Key_Down) : Qt::Key_A + (c.toUpper().unicode() - 'A'),
-                                 mv ? Qt::AltModifier : Qt::NoModifier, mv ? QString() : QString(c));
-                    QWidget *target = m_center->currentWidget() == m_rebase ? static_cast<QWidget *>(m_rebase->findChild<RebaseList *>()) : m_diff->area();
-                    QApplication::sendEvent(target ? target : m_diff->area(), &ev);
-                }
+                sendDemoKeys(arg);
             else if (step.startsWith(QLatin1String("open:"))) {
                 const QString mode = arg.section(QLatin1Char(':'), 0, 0), path = arg.section(QLatin1Char(':'), 1);
                 for (const QVariant &v : m_commitPanel->files(mode))

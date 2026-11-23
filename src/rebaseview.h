@@ -9,8 +9,7 @@ class QPushButton;
 
 // The plan: rows newest first, each {id, summary, message, original, author,
 // email, action: pick|squash|fixup|drop}. Drag or Alt+↑/↓ to reorder.
-class RebaseList : public QAbstractScrollArea
-{
+class RebaseList : public QAbstractScrollArea {
     Q_OBJECT
 public:
     explicit RebaseList(QWidget *parent = nullptr);
@@ -47,8 +46,7 @@ private:
     bool m_dragging = false;
 };
 
-class RebaseView : public QWidget
-{
+class RebaseView : public QWidget {
     Q_OBJECT
 public:
     explicit RebaseView(QWidget *parent = nullptr);

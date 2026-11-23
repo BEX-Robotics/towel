@@ -1,0 +1,30 @@
+# Towel follows the BEX C++ conventions (KNR braces, 4 spaces, `char *s`).
+# clang-format does the braces and spacing; ci/check-style.py the blank-line rules.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 0
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+RemoveBracesLLVM: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortLambdasOnASingleLine: All
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: true
+AccessModifierOffset: -4
+NamespaceIndentation: None
+FixNamespaceComments: true
+SortIncludes: Never
+IncludeBlocks: Preserve
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+AlignAfterOpenBracket: DontAlign
+ContinuationIndentWidth: 4
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: CurrentLine
+InsertNewlineAtEOF: true
+KeepEmptyLines:
+  AtStartOfBlock: false
+  AtStartOfFile: false
+MaxEmptyLinesToKeep: 1

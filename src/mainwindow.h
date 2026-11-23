@@ -16,12 +16,12 @@ class Repo;
 class CommitPanel;
 class RebaseView;
 
-class MainWindow : public QMainWindow
-{
+class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     void runDemo(); // dev aid: TOWEL_DEMO_* env vars
+    void sendDemoKeys(const QString &keys);
 
 protected:
     void closeEvent(QCloseEvent *) override;
@@ -51,9 +51,10 @@ private:
     void deleteBranch(const QString &name);
     void stashChanges();
     void startRebase(const QString &from);
+
     // run a git command; on failure whose output matches `retryIf`, ask and run `retry`
     void gitThen(const QString &label, const QStringList &args, const QString &retryIf = {}, const QString &question = {},
-                 const QStringList &retry = {}, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep"));
+        const QStringList &retry = {}, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep"));
 
     Repo *m_repo;
     CommitView *m_commits;
@@ -77,7 +78,7 @@ private:
     QPushButton *m_opForce, *m_opToggle, *m_opClose;
     QPlainTextEdit *m_opLog;
 
-    QString m_selectedId;
+    QString m_selectedID;
     QVariantMap m_openFile;
     QString m_openMode; // "" (commit file), "unstaged" or "staged"
     bool m_jumpOnHits = false;

@@ -22,19 +22,18 @@ QMutex g_pathMutex;
 QString g_path;
 Repo *g_instance = nullptr;
 
-QProcessEnvironment gitEnv()
-{
+QProcessEnvironment gitEnv() {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     env.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
     env.insert(QStringLiteral("GIT_EDITOR"), QStringLiteral("true"));
     env.insert(QStringLiteral("GIT_SEQUENCE_EDITOR"), QStringLiteral("true"));
     env.insert(QStringLiteral("LC_ALL"), QStringLiteral("C"));
+
     return env;
 }
 
 // Synchronous git call, for worker threads.
-int gitSync(const QString &root, const QStringList &args, QString *out, const QByteArray &input = {}, const QProcessEnvironment &env = gitEnv())
-{
+int gitSync(const QString &root, const QStringList &args, QString *out, const QByteArray &input = {}, const QProcessEnvironment &env = gitEnv()) {
     QProcess p;
     p.setWorkingDirectory(root);
     p.setProcessEnvironment(env);
@@ -52,8 +51,7 @@ int gitSync(const QString &root, const QStringList &args, QString *out, const QB
 }
 } // namespace
 
-QString gitDirOf(const QString &root)
-{
+QString gitDirOf(const QString &root) {
     GRepo r;
     if (!openRepo(r, root)) return {};
     QString p = u8(git_repository_path(r));
@@ -61,8 +59,7 @@ QString gitDirOf(const QString &root)
     return p;
 }
 
-QString commonDirOf(const QString &root)
-{
+QString commonDirOf(const QString &root) {
     GRepo r;
     if (!openRepo(r, root)) return {};
     QString p = u8(git_repository_commondir(r));
@@ -70,23 +67,20 @@ QString commonDirOf(const QString &root)
     return p;
 }
 
-Repo *Repo::instance()
-{
+Repo *Repo::instance() {
     if (!g_instance) g_instance = new Repo;
     return g_instance;
 }
 
-QString Repo::currentPath()
-{
+QString Repo::currentPath() {
     QMutexLocker l(&g_pathMutex);
     return g_path;
 }
 
 Repo::Repo(QObject *parent) : QObject(parent) {}
 
-void Repo::open(const QString &pathOrUrl)
-{
-    QString p = pathOrUrl;
+void Repo::open(const QString &pathOrURL) {
+    QString p = pathOrURL;
     if (p.startsWith(QLatin1String("file:"))) p = QUrl(p).toLocalFile();
     if (p.isEmpty()) return;
     const quint64 gen = ++m_loadGen;
@@ -144,13 +138,11 @@ void Repo::open(const QString &pathOrUrl)
     });
 }
 
-void Repo::refresh()
-{
+void Repo::refresh() {
     if (!m_path.isEmpty()) open(m_path);
 }
 
-void Repo::checkChanged()
-{
+void Repo::checkChanged() {
     if (m_path.isEmpty() || m_checking || m_loading || m_opRunning || m_indexBusy || m_settling) return;
     m_checking = true;
     const QString root = m_path;
@@ -163,8 +155,7 @@ void Repo::checkChanged()
 // The git dir's own files (HEAD, index, packed-refs, FETCH_HEAD...) and the ref
 // folders change on every commit, checkout, fetch and push, from any program.
 // A few dozen inotify watches; the working tree itself is left to the poll.
-void Repo::watchGitDir()
-{
+void Repo::watchGitDir() {
     if (!m_watcher) {
         m_watcher = new QFileSystemWatcher(this);
         m_watchDebounce = new QTimer(this);
@@ -197,8 +188,7 @@ void Repo::watchGitDir()
     if (!add.isEmpty()) m_watcher->addPaths(add);
 }
 
-void Repo::loadDetails(const QString &id)
-{
+void Repo::loadDetails(const QString &id) {
     if (m_path.isEmpty() || id.isEmpty()) return;
     const quint64 gen = ++m_detailsGen;
     const QString root = m_path;
@@ -209,8 +199,7 @@ void Repo::loadDetails(const QString &id)
     });
 }
 
-void Repo::loadDiff(const QString &id, const QString &path, const QString &oldPath, bool full)
-{
+void Repo::loadDiff(const QString &id, const QString &path, const QString &oldPath, bool full) {
     if (m_path.isEmpty()) return;
     const quint64 gen = ++m_diffGen;
     const QString root = m_path;
@@ -225,27 +214,23 @@ void Repo::loadDiff(const QString &id, const QString &path, const QString &oldPa
     });
 }
 
-void Repo::clearDiff()
-{
+void Repo::clearDiff() {
     ++m_diffGen;
     m_diff = DiffDoc{};
     emit diffChanged();
 }
 
-void Repo::copy(const QString &text)
-{
+void Repo::copy(const QString &text) {
     QGuiApplication::clipboard()->setText(text);
 }
 
-QString Repo::dateString(qint64 ms) const
-{
+QString Repo::dateString(qint64 ms) const {
     return QLocale().toString(QDateTime::fromMSecsSinceEpoch(ms), QStringLiteral("ddd d MMM yyyy, HH:mm"));
 }
 
 // ---------- git operations (shell out to git: same auth, hooks and config as the terminal) ----------
 
-void Repo::setOp(bool running, const QString &label, const QString &out, bool failed)
-{
+void Repo::setOp(bool running, const QString &label, const QString &out, bool failed) {
     m_opRunning = running;
     m_opLabel = label;
     m_opOutput = out;
@@ -253,14 +238,12 @@ void Repo::setOp(bool running, const QString &label, const QString &out, bool fa
     emit opChanged();
 }
 
-void Repo::dismissOp()
-{
+void Repo::dismissOp() {
     m_opCanForce = false;
     setOp(false, QString(), QString(), false);
 }
 
-void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input, const QProcessEnvironment *env)
-{
+void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input, const QProcessEnvironment *env) {
     if (m_opRunning || m_path.isEmpty()) return;
     m_opCanForce = false;
     setOp(true, label, QString(), false);
@@ -276,8 +259,7 @@ void Repo::runGit(const QString &label, const QStringList &args, const QByteArra
         m_opOutput += QString::fromUtf8(p->readAll());
         p->deleteLater();
         const bool ok = st == QProcess::NormalExit && code == 0;
-        if (!ok && args.value(0) == QLatin1String("push") && !args.contains(QLatin1String("--force-with-lease"))
-            && (m_opOutput.contains(QLatin1String("non-fast-forward")) || m_opOutput.contains(QLatin1String("[rejected]"))))
+        if (!ok && args.value(0) == QLatin1String("push") && !args.contains(QLatin1String("--force-with-lease")) && (m_opOutput.contains(QLatin1String("non-fast-forward")) || m_opOutput.contains(QLatin1String("[rejected]"))))
             m_opCanForce = true;
         setOp(false, label, m_opOutput.trimmed(), !ok);
         journalEnd(ok);
@@ -294,19 +276,16 @@ void Repo::runGit(const QString &label, const QStringList &args, const QByteArra
     p->closeWriteChannel();
 }
 
-void Repo::pull()
-{
+void Repo::pull() {
     journalBegin(QStringLiteral("pull"), QStringLiteral("--keep"));
     runGit(QStringLiteral("Pull (rebase)"), {QStringLiteral("pull"), QStringLiteral("--rebase"), QStringLiteral("--autostash")});
 }
 
-void Repo::fetch()
-{
+void Repo::fetch() {
     runGit(QStringLiteral("Fetch"), {QStringLiteral("fetch"), QStringLiteral("--all"), QStringLiteral("--prune")});
 }
 
-void Repo::push(bool force)
-{
+void Repo::push(bool force) {
     QStringList args{QStringLiteral("push")};
     if (force) args << QStringLiteral("--force-with-lease");
     if (m_upstream.isEmpty() && !m_branch.isEmpty()) {
@@ -324,8 +303,7 @@ void Repo::push(bool force)
     runGit(force ? QStringLiteral("Force push (with lease)") : QStringLiteral("Push"), args);
 }
 
-int Repo::rewordState(const QString &id)
-{
+int Repo::rewordState(const QString &id) {
     if (m_path.isEmpty() || id == QLatin1String("WIP") || m_branch.isEmpty()) return 0;
     if (gitSync(m_path, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), id, QStringLiteral("HEAD")}, nullptr) != 0) return 0;
     QString out;
@@ -333,8 +311,7 @@ int Repo::rewordState(const QString &id)
     return out.trimmed().isEmpty() ? 1 : 2;
 }
 
-void Repo::reword(const QString &id, const QString &message)
-{
+void Repo::reword(const QString &id, const QString &message) {
     if (m_opRunning || m_path.isEmpty()) return;
     const QString root = m_path;
     QString msg = message.trimmed();
@@ -372,15 +349,15 @@ void Repo::reword(const QString &id, const QString &message)
         // 2. same tree, parents and author, new message
         QString out;
         if (gitSync(root, args, &out, msg.toUtf8(), env) != 0) return {false, out};
-        const QString newId = out.section(QLatin1Char('\n'), -1).trimmed();
+        const QString newID = out.section(QLatin1Char('\n'), -1).trimmed();
 
         // 3. move the branch (HEAD) or replay the commits above it
         if (isHead) {
-            if (gitSync(root, {QStringLiteral("update-ref"), QStringLiteral("-m"), QStringLiteral("towel: reword"), QStringLiteral("HEAD"), newId, id}, &out) != 0)
+            if (gitSync(root, {QStringLiteral("update-ref"), QStringLiteral("-m"), QStringLiteral("towel: reword"), QStringLiteral("HEAD"), newID, id}, &out) != 0)
                 return {false, out};
             return {true, QStringLiteral("Message updated.")};
         }
-        if (gitSync(root, {QStringLiteral("rebase"), QStringLiteral("--rebase-merges"), QStringLiteral("--autostash"), QStringLiteral("--onto"), newId, id}, &out) != 0) {
+        if (gitSync(root, {QStringLiteral("rebase"), QStringLiteral("--rebase-merges"), QStringLiteral("--autostash"), QStringLiteral("--onto"), newID, id}, &out) != 0) {
             QString ignored;
             gitSync(root, {QStringLiteral("rebase"), QStringLiteral("--abort")}, &ignored);
             return {false, QStringLiteral("Could not replay the later commits, nothing was changed.\n") + out};
@@ -396,8 +373,7 @@ void Repo::reword(const QString &id, const QString &message)
 
 // ---------- commit panel ----------
 
-void Repo::loadStatus()
-{
+void Repo::loadStatus() {
     if (m_path.isEmpty()) return;
     const quint64 gen = ++m_statusGen;
     const QString root = m_path;
@@ -405,6 +381,7 @@ void Repo::loadStatus()
         if (gen != m_statusGen) return;
         m_status = QVariantMap{{"unstaged", ws.unstaged}, {"staged", ws.staged}, {"conflicted", ws.conflicted}, {"error", ws.error}};
         m_hasHead = ws.hasHead;
+
         // our own index changes must not trigger a full history reload
         if (m_settling && !m_indexBusy && !ws.fingerprint.isEmpty()) m_fingerprint = ws.fingerprint;
         if (!m_indexBusy) m_settling = false;
@@ -414,26 +391,24 @@ void Repo::loadStatus()
 
 namespace {
 // Literal pathspecs, NUL-separated, for --pathspec-from-file=- --pathspec-file-nul
-QByteArray pathspecs(const QStringList &paths)
-{
+QByteArray pathspecs(const QStringList &paths) {
     QByteArray out;
     for (const QString &p : paths) {
         out += ":(literal)" + p.toUtf8();
-        out += '\0';
+        out.append(char(0));
     }
     return out;
 }
-const QStringList kFromStdin{QStringLiteral("--pathspec-from-file=-"), QStringLiteral("--pathspec-file-nul")};
+
+const QStringList pathspecArgs{QStringLiteral("--pathspec-from-file=-"), QStringLiteral("--pathspec-file-nul")};
 } // namespace
 
-void Repo::indexOp(const QStringList &args, const QByteArray &input)
-{
+void Repo::indexOp(const QStringList &args, const QByteArray &input) {
     m_indexQueue.append({args, input, {}});
     pumpIndexOps();
 }
 
-void Repo::applyLines(const QStringList &paths, bool staged, const QSet<int> &selDel, const QSet<int> &selAdd)
-{
+void Repo::applyLines(const QStringList &paths, bool staged, const QSet<int> &selDel, const QSet<int> &selAdd) {
     if (paths.isEmpty() || (selDel.isEmpty() && selAdd.isEmpty())) return;
     const QString path = paths.first();
     const QString root = m_path;
@@ -443,9 +418,12 @@ void Repo::applyLines(const QStringList &paths, bool staged, const QSet<int> &se
                              input = gitload::partialPatch(root, staged, path, selDel, selAdd, &err, &whole);
                              if (whole) { // new, deleted, renamed or binary: the whole file
                                  input = pathspecs(paths);
-                                 if (!staged) args = QStringList{QStringLiteral("add"), QStringLiteral("-A")} + kFromStdin;
-                                 else if (hasHead) args = QStringList{QStringLiteral("restore"), QStringLiteral("--staged")} + kFromStdin;
-                                 else args = QStringList{QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-q")} + kFromStdin;
+                                 if (!staged)
+                                     args = QStringList{QStringLiteral("add"), QStringLiteral("-A")} + pathspecArgs;
+                                 else if (hasHead)
+                                     args = QStringList{QStringLiteral("restore"), QStringLiteral("--staged")} + pathspecArgs;
+                                 else
+                                     args = QStringList{QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-q")} + pathspecArgs;
                                  return;
                              }
                              args = {QStringLiteral("apply"), QStringLiteral("--cached"), QStringLiteral("--whitespace=nowarn")};
@@ -455,8 +433,7 @@ void Repo::applyLines(const QStringList &paths, bool staged, const QSet<int> &se
     pumpIndexOps();
 }
 
-void Repo::failIndexOp(const QString &out)
-{
+void Repo::failIndexOp(const QString &out) {
     m_indexBusy = false;
     m_indexQueue.clear();
     setOp(false, QStringLiteral("Staging"), out.isEmpty() ? QStringLiteral("git failed") : out, true);
@@ -466,16 +443,16 @@ void Repo::failIndexOp(const QString &out)
 }
 
 // Index operations run one at a time (git takes index.lock), then refresh only the status.
-void Repo::pumpIndexOps()
-{
+void Repo::pumpIndexOps() {
     if (m_indexBusy || m_indexQueue.isEmpty() || m_path.isEmpty()) return;
     IndexJob job = m_indexQueue.takeFirst();
     m_indexBusy = true;
     if (!job.gen) return runIndexJob(job.args, job.input);
     QtConcurrent::run([gen = job.gen] {
-        IndexJob out;
+        IndexJob out = {};
         QString err;
         gen(out.args, out.input, err);
+
         return std::make_pair(out, err);
     }).then(this, [this](std::pair<IndexJob, QString> res) {
         if (!res.second.isEmpty()) return failIndexOp(res.second);
@@ -483,8 +460,7 @@ void Repo::pumpIndexOps()
     });
 }
 
-void Repo::runIndexJob(const QStringList &args, const QByteArray &input)
-{
+void Repo::runIndexJob(const QStringList &args, const QByteArray &input) {
     auto *p = new QProcess(this);
     p->setWorkingDirectory(m_path);
     p->setProcessEnvironment(gitEnv());
@@ -505,32 +481,31 @@ void Repo::runIndexJob(const QStringList &args, const QByteArray &input)
     p->closeWriteChannel();
 }
 
-void Repo::stage(const QStringList &paths)
-{
+void Repo::stage(const QStringList &paths) {
     if (paths.isEmpty()) return;
-    indexOp(QStringList{QStringLiteral("add"), QStringLiteral("-A")} + kFromStdin, pathspecs(paths));
+    indexOp(QStringList{QStringLiteral("add"), QStringLiteral("-A")} + pathspecArgs, pathspecs(paths));
 }
 
-void Repo::unstage(const QStringList &paths)
-{
+void Repo::unstage(const QStringList &paths) {
     if (paths.isEmpty()) return;
-    if (m_hasHead) indexOp(QStringList{QStringLiteral("restore"), QStringLiteral("--staged")} + kFromStdin, pathspecs(paths));
-    else indexOp(QStringList{QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-r"), QStringLiteral("-q")} + kFromStdin, pathspecs(paths));
+    if (m_hasHead)
+        indexOp(QStringList{QStringLiteral("restore"), QStringLiteral("--staged")} + pathspecArgs, pathspecs(paths));
+    else
+        indexOp(QStringList{QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-r"), QStringLiteral("-q")} + pathspecArgs, pathspecs(paths));
 }
 
-void Repo::stageAll()
-{
+void Repo::stageAll() {
     indexOp({QStringLiteral("add"), QStringLiteral("-A")}, {});
 }
 
-void Repo::unstageAll()
-{
-    if (m_hasHead) indexOp({QStringLiteral("reset"), QStringLiteral("-q")}, {});
-    else indexOp({QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-r"), QStringLiteral("-q"), QStringLiteral(".")}, {});
+void Repo::unstageAll() {
+    if (m_hasHead)
+        indexOp({QStringLiteral("reset"), QStringLiteral("-q")}, {});
+    else
+        indexOp({QStringLiteral("rm"), QStringLiteral("--cached"), QStringLiteral("-r"), QStringLiteral("-q"), QStringLiteral(".")}, {});
 }
 
-void Repo::commit(const QString &message, bool amend)
-{
+void Repo::commit(const QString &message, bool amend) {
     QStringList args{QStringLiteral("commit"), QStringLiteral("-F"), QStringLiteral("-")};
     if (amend) args << QStringLiteral("--amend");
     QByteArray msg = message.trimmed().toUtf8();
@@ -547,8 +522,7 @@ void Repo::commit(const QString &message, bool amend)
 
 // ---------- undo journal ----------
 
-QString Repo::sequencerState() const
-{
+QString Repo::sequencerState() const {
     GRepo r;
     if (!openRepo(r, m_path)) return {};
     switch (git_repository_state(r)) {
@@ -564,8 +538,7 @@ QString Repo::sequencerState() const
     }
 }
 
-QVariantList Repo::rebasePlanFrom(const QString &from, QString *err, QString *base)
-{
+QVariantList Repo::rebasePlanFrom(const QString &from, QString *err, QString *base) {
     QString out;
     if (m_branch.isEmpty()) {
         *err = QStringLiteral("Check out a branch first (HEAD is detached).");
@@ -603,8 +576,7 @@ QVariantList Repo::rebasePlanFrom(const QString &from, QString *err, QString *ba
 
 // Runs `git rebase -i` with a prepared todo. Messages are applied with
 // `exec git commit --amend -F file`, so git never needs an editor.
-void Repo::rebase(const QString &base, const QVariantList &items)
-{
+void Repo::rebase(const QString &base, const QVariantList &items) {
     if (m_opRunning || items.isEmpty()) return;
     QString gitDir;
     gitSync(m_path, {QStringLiteral("rev-parse"), QStringLiteral("--absolute-git-dir")}, &gitDir);
@@ -664,8 +636,7 @@ void Repo::rebase(const QString &base, const QVariantList &items)
     runGit(QStringLiteral("Rebase"), args, {}, &env);
 }
 
-QPair<QString, QString> Repo::headRef() const
-{
+QPair<QString, QString> Repo::headRef() const {
     GRepo r;
     if (!openRepo(r, m_path)) return {};
     GRef head;
@@ -674,8 +645,7 @@ QPair<QString, QString> Repo::headRef() const
     return {detached ? QStringLiteral("HEAD") : u8(git_reference_name(head)), oidStr(git_reference_target(head))};
 }
 
-void Repo::journalBegin(const QString &label, const QString &mode)
-{
+void Repo::journalBegin(const QString &label, const QString &mode) {
     m_pending.reset();
     if (m_opRunning) return;
     const auto [ref, oid] = headRef();
@@ -683,8 +653,7 @@ void Repo::journalBegin(const QString &label, const QString &mode)
     m_pending = UndoEntry{label, ref, oid, {}, {}, mode};
 }
 
-void Repo::journalEnd(bool ok)
-{
+void Repo::journalEnd(bool ok) {
     if (!m_pending) return;
     UndoEntry e = *m_pending;
     m_pending.reset();
@@ -698,42 +667,40 @@ void Repo::journalEnd(bool ok)
     emit undoChanged();
 }
 
-QString Repo::undoLabel() const
-{
+QString Repo::undoLabel() const {
     return m_undo.isEmpty() ? QString() : m_undo.last().label;
 }
 
-QString Repo::redoLabel() const
-{
+QString Repo::redoLabel() const {
     return m_redo.isEmpty() ? QString() : m_redo.last().label;
 }
 
-void Repo::undo()
-{
+void Repo::undo() {
     if (m_undo.isEmpty() || m_opRunning) return;
     moveRef(m_undo.last(), true);
 }
 
-void Repo::redo()
-{
+void Repo::redo() {
     if (m_redo.isEmpty() || m_opRunning) return;
     moveRef(m_redo.last(), false);
 }
 
 // Undo = move the ref back to `before`; redo = forward to `after`. Only when
 // the ref is still exactly where the journal left it.
-void Repo::moveRef(const UndoEntry &e, bool back)
-{
+void Repo::moveRef(const UndoEntry &e, bool back) {
     const QString label = (back ? QStringLiteral("Undo ") : QStringLiteral("Redo ")) + e.label;
     const auto [ref, oid] = headRef();
     const QString from = back ? e.after : e.before, to = back ? e.before : e.after;
     if (ref != e.ref || oid != from) {
         setOp(false, label, QStringLiteral("The branch has moved since then, so this can no longer be undone here. "
-                                           "git reflog still has every previous position."), true);
+                                           "git reflog still has every previous position."),
+            true);
         (back ? m_undo : m_redo).clear();
         emit undoChanged();
+
         return;
     }
+
     // undo drops the commits in after..before; refuse if they are already pushed
     auto ancestor = [this](const QString &a, const QString &b) {
         return gitSync(m_path, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), a, b}, nullptr) == 0;
@@ -755,8 +722,7 @@ void Repo::moveRef(const UndoEntry &e, bool back)
     runGit(label, {QStringLiteral("reset"), e.mode, to});
 }
 
-QString Repo::headId() const
-{
+QString Repo::headID() const {
     GRepo r;
     if (!openRepo(r, m_path)) return {};
     GRef head;
@@ -764,8 +730,7 @@ QString Repo::headId() const
     return oidStr(git_reference_target(head));
 }
 
-QString Repo::headMessage() const
-{
+QString Repo::headMessage() const {
     GRepo r;
     if (!openRepo(r, m_path)) return {};
     GObj c;

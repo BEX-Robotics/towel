@@ -10,10 +10,8 @@
 #include <QObject>
 #include <QVariantMap>
 
-
 // The open repository: history model, details, diffs and git operations.
-class Repo : public QObject
-{
+class Repo : public QObject {
     Q_OBJECT
 
 public:
@@ -44,7 +42,7 @@ public:
     bool opFailed() const { return m_opFailed; }
     bool opCanForce() const { return m_opCanForce; }
 
-    void open(const QString &pathOrUrl);
+    void open(const QString &pathOrURL);
     void refresh();
     void checkChanged();
     void watchGitDir(); // inotify on .git so commits/pushes from elsewhere show up while in the background
@@ -58,11 +56,11 @@ public:
     void push(bool force = false);
     void fetch();
     void dismissOp();
+
     // any other git command, shown in the status strip; refreshes afterwards
     // undoLabel: record in the undo journal (undo resets back with --keep)
     // undoMode: how undo moves back: "--keep" (drops the commits' changes), "--soft", "--mixed"
-    void run(const QString &label, const QStringList &args, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep"))
-    {
+    void run(const QString &label, const QStringList &args, const QString &undoLabel = {}, const QString &undoMode = QStringLiteral("--keep")) {
         if (!undoLabel.isEmpty()) journalBegin(undoLabel, undoMode);
         runGit(label, args);
     }
@@ -71,8 +69,10 @@ public:
     // interactive rebase: commits from `from` (inclusive) up to HEAD, newest first:
     // {id, summary, message, author, email}. Empty + *err when not possible.
     QVariantList rebasePlanFrom(const QString &from, QString *err, QString *base);
+
     // items newest first: {id, action: pick|squash|fixup|drop, message (final, for pick rows)}
     void rebase(const QString &base, const QVariantList &items); // "cherry-pick", "revert", "merge", "rebase" or ""
+
     // 0 = not rewordable, 1 = rewordable (local only), 2 = rewordable but already pushed
     int rewordState(const QString &id);
     void reword(const QString &id, const QString &message);
@@ -84,10 +84,11 @@ public:
     void unstage(const QStringList &paths);
     void stageAll();
     void unstageAll();
+
     // stage (staged=false) or unstage (staged=true) only these changed lines of a file
     void applyLines(const QStringList &paths, bool staged, const QSet<int> &selDel, const QSet<int> &selAdd);
     void commit(const QString &message, bool amend);
-    QString headId() const;
+    QString headID() const;
     QString branch() const { return m_branch; } // "" when detached
     QString headMessage() const;
     bool indexBusy() const { return m_indexBusy; }
@@ -119,6 +120,7 @@ private:
     struct IndexJob {
         QStringList args;
         QByteArray input;
+
         // computes args + input on a worker right before running; sets err to fail
         std::function<void(QStringList &args, QByteArray &input, QString &err)> gen;
     };
@@ -139,7 +141,7 @@ private:
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_watchDebounce = nullptr;
     CommitModel m_commits;
-    DiffDoc m_diff;
+    DiffDoc m_diff = {};
     QString m_path, m_name, m_head, m_upstream, m_fingerprint, m_branch;
     bool m_detached = false;
     int m_ahead = 0, m_behind = 0, m_lanes = 1;

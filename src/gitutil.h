@@ -10,10 +10,20 @@ struct GPtr {
     GPtr(const GPtr &) = delete;
     GPtr &operator=(const GPtr &) = delete;
     ~GPtr() { reset(); }
-    void reset(T *n = nullptr) { if (p) F(p); p = n; }
-    T **out() { reset(); return &p; }
+    void reset(T *n = nullptr) {
+        if (p) F(p);
+        p = n;
+    }
+    T **out() {
+        reset();
+        return &p;
+    }
     T *get() const { return p; }
-    T *release() { T *t = p; p = nullptr; return t; }
+    T *release() {
+        T *t = p;
+        p = nullptr;
+        return t;
+    }
     operator T *() const { return p; }
     explicit operator bool() const { return p != nullptr; }
 };
@@ -31,14 +41,12 @@ using GStatus = GPtr<git_status_list, git_status_list_free>;
 using GRefIter = GPtr<git_reference_iterator, git_reference_iterator_free>;
 using GBranchIter = GPtr<git_branch_iterator, git_branch_iterator_free>;
 
-inline QString gitErr()
-{
+inline QString gitErr() {
     const git_error *e = git_error_last();
     return (e && e->message) ? QString::fromUtf8(e->message) : QStringLiteral("unknown git error");
 }
 
-inline QString oidStr(const git_oid *o)
-{
+inline QString oidStr(const git_oid *o) {
     char buf[80];
     git_oid_tostr(buf, sizeof buf, o);
     return QString::fromLatin1(buf);
@@ -46,7 +54,6 @@ inline QString oidStr(const git_oid *o)
 
 inline QString u8(const char *s) { return s ? QString::fromUtf8(s) : QString(); }
 
-inline bool openRepo(GRepo &r, const QString &path)
-{
+inline bool openRepo(GRepo &r, const QString &path) {
     return git_repository_open(r.out(), path.toUtf8().constData()) == 0;
 }

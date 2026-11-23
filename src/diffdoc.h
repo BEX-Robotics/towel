@@ -10,6 +10,7 @@ struct ColorSpan {
     QRgb color; // 0 = default text color
     bool bold, italic;
 };
+
 using Ranges = std::vector<std::pair<int, int>>;
 
 struct DocLine {
@@ -17,7 +18,7 @@ struct DocLine {
     int o, n;
     QString text;
     std::vector<ColorSpan> spans;
-    Ranges marks;
+    Ranges marks = {};
 };
 
 struct DocHunk {
@@ -26,7 +27,7 @@ struct DocHunk {
 };
 
 struct DiffDoc {
-    DiffData meta; // hunks moved out into `hunks` below
+    DiffData meta = {}; // hunks moved out into `hunks` below
     std::vector<DocHunk> hunks;
     int additions = 0, deletions = 0, maxCols = 0;
 };

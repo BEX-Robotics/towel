@@ -9,8 +9,7 @@
 #include <QTimer>
 #include <git2.h>
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     // On a KDE session Qt would load the Plasma platform theme: ~750 extra
     // libraries (KIO, Qt Quick, QML, OpenGL, Mesa/LLVM) only to style dialogs
     // and icons. Towel paints its own theme, so hide the desktop from Qt while
@@ -50,6 +49,7 @@ int main(int argc, char *argv[])
     app.setStyleSheet(theme::styleSheet());
 
     git_libgit2_init();
+
     // The object cache would keep every commit of the history walk alive (up to 256 MB)
     // and fragment the heap; we read each object once, so it buys nothing.
     git_libgit2_opts(GIT_OPT_ENABLE_CACHING, 0);
@@ -61,8 +61,10 @@ int main(int argc, char *argv[])
     if (start.isEmpty()) {
         // no path given: the repository we were started in, else the last one opened
         git_buf found = GIT_BUF_INIT;
-        if (git_repository_discover(&found, QDir::currentPath().toUtf8().constData(), 0, nullptr) == 0) start = QDir::currentPath();
-        else start = QSettings().value("recentRepos").toStringList().value(0, QDir::currentPath());
+        if (git_repository_discover(&found, QDir::currentPath().toUtf8().constData(), 0, nullptr) == 0)
+            start = QDir::currentPath();
+        else
+            start = QSettings().value("recentRepos").toStringList().value(0, QDir::currentPath());
         git_buf_dispose(&found);
     }
 

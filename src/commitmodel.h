@@ -14,8 +14,7 @@ struct RefGroup {
 
 // History. Holds only the compact graph rows; commit titles are read from git
 // on demand for rows being painted (with a small cache).
-class CommitModel : public QObject
-{
+class CommitModel : public QObject {
     Q_OBJECT
 public:
     explicit CommitModel(QObject *parent = nullptr) : QObject(parent) {}
@@ -63,7 +62,7 @@ private:
 
     mutable GRepo m_repo;
     mutable QCache<int, Text> m_text{4000};
-    Text m_empty;
+    Text m_empty = {};
 
     std::vector<char> m_hits;
     QList<int> m_hitList;

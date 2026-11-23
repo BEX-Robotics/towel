@@ -7,8 +7,7 @@ struct RefGroup;
 
 // The history: graph | refs + message | author | date, painted directly from
 // the compact rows. Only visible rows are touched.
-class CommitView : public QAbstractScrollArea
-{
+class CommitView : public QAbstractScrollArea {
     Q_OBJECT
 public:
     explicit CommitView(CommitModel *model, QWidget *parent = nullptr);
@@ -36,8 +35,8 @@ private:
     int rowAt(int y) const;
     int graphWidth() const;
     int m_gw = 60;
-    int m_rowHAtZoom = kRowH(); // graph width used by the last paint
-    int refsWidth() const; // left column with branch/tag chips; 0 when narrow (chips go inline)
+    int m_rowHAtZoom = rowHeight(); // graph width used by the last paint
+    int refsWidth() const;          // left column with branch/tag chips; 0 when narrow (chips go inline)
     int authorWidth() const;
     int dateWidth() const;
     void paintRow(QPainter &p, int row, int y);
@@ -47,7 +46,7 @@ private:
     CommitModel *m_model;
     int m_current = -1;
     int m_hover = -1;
-    static int kRowH() { return theme::z(32); }
-    static int kLaneW() { return theme::z(22); }
-    static int kNode() { return theme::z(22); }
+    static int rowHeight() { return theme::z(32); }
+    static int laneWidth() { return theme::z(22); }
+    static int nodeSize() { return theme::z(22); }
 };

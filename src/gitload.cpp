@@ -15,9 +15,9 @@
 
 namespace {
 
-constexpr int kPalette = 10;
-constexpr int kMaxDiffLines = 40000;
-constexpr int kMaxStatFiles = 3000;
+constexpr int paletteSize = 10;
+constexpr int maxDiffLines = 40000;
+constexpr int maxStatFiles = 3000;
 
 // ---------- lane layout ----------
 struct Lanes {
@@ -30,28 +30,24 @@ struct Lanes {
     int next = 0;
     int width = 1;
 
-    int newColor()
-    {
+    int newColor() {
         int c = next;
-        next = (next + 1) % kPalette;
+        next = (next + 1) % paletteSize;
         return c;
     }
-    int freeSlot()
-    {
+    int freeSlot() {
         for (size_t i = 0; i < s.size(); ++i)
             if (!s[i].used) return int(i);
         s.push_back({});
         return int(s.size() - 1);
     }
-    int find(const git_oid *o) const
-    {
+    int find(const git_oid *o) const {
         for (size_t i = 0; i < s.size(); ++i)
             if (s[i].used && git_oid_equal(&s[i].oid, o)) return int(i);
         return -1;
     }
 
-    void place(const git_oid *id, const std::vector<git_oid> &parents, CommitRow &row, std::vector<Edge> &pool)
-    {
+    void place(const git_oid *id, const std::vector<git_oid> &parents, CommitRow &row, std::vector<Edge> &pool) {
         row.edgeStart = uint32_t(pool.size());
         std::vector<int> matches;
         for (size_t i = 0; i < s.size(); ++i)
@@ -84,9 +80,8 @@ struct Lanes {
                     j = freeSlot();
                     c = newColor();
                     s[j] = {true, parents[pi], c};
-                } else {
+                } else
                     c = s[j].color;
-                }
                 pool.push_back({quint16(col), quint16(j), 2, quint8(c)});
             }
         }
@@ -100,8 +95,7 @@ struct Lanes {
     }
 };
 
-int dirtyCount(git_repository *r)
-{
+int dirtyCount(git_repository *r) {
     if (git_repository_is_bare(r)) return 0;
     git_status_options o;
     git_status_options_init(&o, GIT_STATUS_OPTIONS_VERSION);
@@ -112,8 +106,7 @@ int dirtyCount(git_repository *r)
     return int(git_status_list_entrycount(st));
 }
 
-QString fingerprintOf(git_repository *r)
-{
+QString fingerprintOf(git_repository *r) {
     QCryptographicHash h(QCryptographicHash::Md5);
     GRef head;
     if (git_repository_head(head.out(), r) == 0) {
@@ -142,6 +135,7 @@ QString fingerprintOf(git_repository *r)
                 const git_diff_delta *d = e->index_to_workdir ? e->index_to_workdir : e->head_to_index;
                 if (d && d->new_file.path) h.addData(QByteArray(d->new_file.path));
                 h.addData(QByteArray::number(int(e->status)));
+
                 // modification time catches repeated edits of the same file
                 if (e->index_to_workdir && e->index_to_workdir->new_file.path) {
                     QFileInfo fi(u8(git_repository_workdir(r)) + u8(e->index_to_workdir->new_file.path));
@@ -153,16 +147,14 @@ QString fingerprintOf(git_repository *r)
     return QString::fromLatin1(h.result().toHex());
 }
 
-int kindOrder(const QString &k)
-{
+int kindOrder(const QString &k) {
     if (k == QLatin1String("head")) return 0;
     if (k == QLatin1String("local")) return 1;
     if (k == QLatin1String("remote")) return 2;
     return 3;
 }
 
-const char *statusLetter(git_delta_t s)
-{
+const char *statusLetter(git_delta_t s) {
     switch (s) {
     case GIT_DELTA_ADDED:
     case GIT_DELTA_UNTRACKED: return "A";
@@ -174,8 +166,7 @@ const char *statusLetter(git_delta_t s)
     }
 }
 
-int makeDiff(git_diff **out, git_repository *r, const QString &id, git_diff_options *o)
-{
+int makeDiff(git_diff **out, git_repository *r, const QString &id, git_diff_options *o) {
     int rc;
     if (id == QLatin1String("WIP:staged") || id == QLatin1String("WIP:unstaged")) {
         git_index *idx = nullptr;
@@ -220,19 +211,18 @@ int makeDiff(git_diff **out, git_repository *r, const QString &id, git_diff_opti
     git_diff_find_options_init(&fo, GIT_DIFF_FIND_OPTIONS_VERSION);
     fo.flags = GIT_DIFF_FIND_RENAMES | GIT_DIFF_FIND_FOR_UNTRACKED;
     git_diff_find_similar(*out, &fo);
+
     return 0;
 }
 
-bool isImagePath(const QString &p)
-{
+bool isImagePath(const QString &p) {
     static const QStringList exts = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "tif", "tiff"};
     return exts.contains(QFileInfo(p).suffix().toLower());
 }
 
 // Join hard-wrapped lines into paragraphs; keep blank lines, lists, indented
 // blocks and trailers (Co-Authored-By: ...) on their own lines.
-QString reflow(const QString &text)
-{
+QString reflow(const QString &text) {
     static const QRegularExpression keep(QStringLiteral("^(\\s|[-*•>]|\\d+[.)]\\s|[A-Z][A-Za-z]*(-[A-Za-z]+)+:\\s)"));
     QStringList out;
     QString para;
@@ -245,18 +235,17 @@ QString reflow(const QString &text)
         if (keep.match(line).hasMatch() || para.isEmpty()) {
             if (!para.isEmpty()) out << para;
             para = line;
-        } else {
+        } else
             para += QLatin1Char(' ') + line.trimmed();
-        }
     }
     if (!para.isEmpty()) out << para;
     return out.join(QLatin1Char('\n')).trimmed();
 }
 
 } // namespace
+
 namespace gitload {
-QString firstBodyLine(const char *body)
-{
+QString firstBodyLine(const char *body) {
     if (!body) return {};
     const QString b = QString::fromUtf8(body);
     for (const QString &l : b.split(QLatin1Char('\n'))) {
@@ -266,22 +255,21 @@ QString firstBodyLine(const char *body)
     return {};
 }
 } // namespace gitload
+
 namespace {
 
 } // namespace
 
 namespace gitload {
 
-QString fingerprint(const QString &root)
-{
+QString fingerprint(const QString &root) {
     GRepo r;
     if (!openRepo(r, root)) return {};
     return fingerprintOf(r);
 }
 
-LoadResult loadRepo(const QString &start)
-{
-    LoadResult res;
+LoadResult loadRepo(const QString &start) {
+    LoadResult res = {};
     GRepo repo;
     if (git_repository_open_ext(repo.out(), start.toUtf8().constData(), 0, nullptr) != 0) {
         res.error = QStringLiteral("Not a git repository: %1").arg(start);
@@ -304,9 +292,8 @@ LoadResult loadRepo(const QString &start)
         }
         if (git_reference_is_branch(head)) headBranch = u8(git_reference_shorthand(head));
         res.head = u8(git_reference_shorthand(head));
-    } else {
+    } else
         res.head = QStringLiteral("(no commits)");
-    }
     res.detached = git_repository_head_detached(repo) == 1;
     if (res.detached && headValid) res.head = oidStr(&headOid).left(8);
     res.currentBranch = headBranch;
@@ -321,10 +308,14 @@ LoadResult loadRepo(const QString &start)
                 GRef ref;
                 ref.p = r;
                 QString kind;
-                if (git_reference_is_branch(r)) kind = QStringLiteral("local");
-                else if (git_reference_is_remote(r)) kind = QStringLiteral("remote");
-                else if (git_reference_is_tag(r)) kind = QStringLiteral("tag");
-                else continue;
+                if (git_reference_is_branch(r))
+                    kind = QStringLiteral("local");
+                else if (git_reference_is_remote(r))
+                    kind = QStringLiteral("remote");
+                else if (git_reference_is_tag(r))
+                    kind = QStringLiteral("tag");
+                else
+                    continue;
                 const QString name = u8(git_reference_shorthand(r));
                 if (kind == QLatin1String("remote") && name.endsWith(QLatin1String("/HEAD"))) continue;
                 GObj obj;
@@ -333,25 +324,25 @@ LoadResult loadRepo(const QString &start)
             }
         }
         if (res.detached && headValid) labels[oidStr(&headOid)].prepend({QStringLiteral("HEAD"), QStringLiteral("head"), true});
-        for (auto &v : labels) {
+        for (auto &v : labels)
             std::stable_sort(v.begin(), v.end(), [](const RefLabel &a, const RefLabel &b) {
                 if (a.current != b.current) return a.current;
                 return kindOrder(a.kind) < kindOrder(b.kind);
             });
-        }
     }
 
     // history walk + lane layout
-    Lanes lanes;
+    Lanes lanes = {};
     if (headValid) {
         const int n = dirtyCount(repo);
         git_oid zero;
         std::memset(&zero, 0, sizeof zero);
+
         // the current branch (and the WIP row above it) always runs down the
         // leftmost lane, however many newer commits other branches have
         lanes.s.push_back({true, n > 0 ? zero : headOid, lanes.newColor()});
         if (n > 0) {
-            CommitRow row;
+            CommitRow row = {};
             lanes.place(&zero, {headOid}, row, res.edges);
             row.wip = true;
             res.wipCount = n;
@@ -372,6 +363,7 @@ LoadResult loadRepo(const QString &start)
         res.authorNames << u8(a->name);
         res.authorEmails << u8(a->email);
         authorIdx.insert(key, i);
+
         return i;
     };
     res.rows.reserve(4096);
@@ -392,7 +384,7 @@ LoadResult loadRepo(const QString &start)
             const unsigned pc = git_commit_parentcount(c);
             for (unsigned i = 0; i < pc; ++i) parents.push_back(*git_commit_parent_id(c, i));
 
-            CommitRow row;
+            CommitRow row = {};
             std::memcpy(row.oid.data(), oid.id, 20);
             lanes.place(&oid, parents, row, res.edges);
             const git_signature *a = git_commit_author(c);
@@ -432,11 +424,11 @@ LoadResult loadRepo(const QString &start)
                 GObj obj;
                 if (git_reference_peel(obj.out(), r, GIT_OBJECT_COMMIT) == 0) id = oidStr(git_object_id(obj));
                 QVariantMap m{{"name", name},
-                              {"kind", bt == GIT_BRANCH_LOCAL ? "local" : "remote"},
-                              {"id", id},
-                              {"current", git_branch_is_head(r) == 1},
-                              {"ahead", 0},
-                              {"behind", 0}};
+                    {"kind", bt == GIT_BRANCH_LOCAL ? "local" : "remote"},
+                    {"id", id},
+                    {"current", git_branch_is_head(r) == 1},
+                    {"ahead", 0},
+                    {"behind", 0}};
                 if (bt == GIT_BRANCH_LOCAL) {
                     GRef up;
                     if (git_branch_upstream(up.out(), r) == 0) {
@@ -457,9 +449,8 @@ LoadResult loadRepo(const QString &start)
                         res.behind = m["behind"].toInt();
                     }
                     locals.append(m);
-                } else {
+                } else
                     remotes.append(m);
-                }
             }
         }
         auto byName = [](const QVariant &a, const QVariant &b) {
@@ -505,8 +496,7 @@ LoadResult loadRepo(const QString &start)
     return res;
 }
 
-QVariantMap details(const QString &root, const QString &id)
-{
+QVariantMap details(const QString &root, const QString &id) {
     QVariantMap out;
     GRepo r;
     if (!openRepo(r, root)) return {{"error", gitErr()}};
@@ -523,7 +513,7 @@ QVariantMap details(const QString &root, const QString &id)
         const git_diff_delta *d = git_diff_get_delta(diff, i);
         size_t ctx = 0, add = 0, del = 0;
         bool binary = d->flags & GIT_DIFF_FLAG_BINARY;
-        if (i < size_t(kMaxStatFiles)) {
+        if (i < size_t(maxStatFiles)) {
             GPatch p;
             if (git_patch_from_diff(p.out(), diff, i) == 0 && p) {
                 git_patch_line_stats(&ctx, &add, &del, p);
@@ -582,12 +572,12 @@ QVariantMap details(const QString &root, const QString &id)
     out["message"] = message;
     out["summary"] = u8(git_commit_summary(c));
     out["body"] = nl >= 0 ? reflow(message.mid(nl + 1).trimmed()) : QString();
+
     return out;
 }
 
-DiffData fileDiff(const QString &root, const QString &id, const QString &path, const QString &oldPath, bool full)
-{
-    DiffData res;
+DiffData fileDiff(const QString &root, const QString &id, const QString &path, const QString &oldPath, bool full) {
+    DiffData res = {};
     res.id = id;
     res.path = path;
     GRepo r;
@@ -653,7 +643,7 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
         const git_diff_hunk *hunk = nullptr;
         size_t nl = 0;
         if (git_patch_get_hunk(&hunk, &nl, p, h) != 0) break;
-        Hunk out;
+        Hunk out = {};
         out.header = QString::fromUtf8(hunk->header, int(hunk->header_len)).trimmed();
         out.lines.reserve(nl);
         for (size_t l = 0; l < nl; ++l) {
@@ -666,14 +656,15 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
             if (s.contains(QLatin1Char('\t'))) {
                 QString e;
                 e.reserve(s.size() + 16);
-                for (QChar ch : s) {
-                    if (ch == QLatin1Char('\t')) e += QString(4 - (e.size() % 4), QLatin1Char(' '));
-                    else e += ch;
-                }
+                for (QChar ch : s)
+                    if (ch == QLatin1Char('\t'))
+                        e += QString(4 - (e.size() % 4), QLatin1Char(' '));
+                    else
+                        e += ch;
                 s = std::move(e);
             }
             out.lines.push_back({t, line->old_lineno, line->new_lineno, std::move(s)});
-            if (++total >= kMaxDiffLines) {
+            if (++total >= maxDiffLines) {
                 res.truncated = true;
                 break;
             }
@@ -684,14 +675,14 @@ DiffData fileDiff(const QString &root, const QString &id, const QString &path, c
 }
 
 QByteArray partialPatch(const QString &root, bool staged, const QString &path, const QSet<int> &selDel,
-                        const QSet<int> &selAdd, QString *err, bool *wholeFile)
-{
+    const QSet<int> &selAdd, QString *err, bool *wholeFile) {
     *wholeFile = false;
     GRepo r;
     if (!openRepo(r, root)) {
         *err = gitErr();
         return {};
     }
+
     // same engine and options as the displayed diff, so line numbers match
     git_diff_options o;
     git_diff_options_init(&o, GIT_DIFF_OPTIONS_VERSION);
@@ -725,6 +716,7 @@ QByteArray partialPatch(const QString &root, bool staged, const QString &path, c
         *wholeFile = true;
         return {};
     }
+
     // file header: everything libgit2 prints before the first hunk
     git_buf buf = GIT_BUF_INIT;
     if (git_patch_to_buf(&buf, p) != 0) {
@@ -760,8 +752,10 @@ QByteArray partialPatch(const QString &root, bool staged, const QString &path, c
                 continue;
             }
             char ch = t;
-            if (t == '+' && !selAdd.contains(line->new_lineno)) ch = staged ? ' ' : 0;
-            else if (t == '-' && !selDel.contains(line->old_lineno)) ch = staged ? 0 : ' ';
+            if (t == '+' && !selAdd.contains(line->new_lineno))
+                ch = staged ? ' ' : 0;
+            else if (t == '-' && !selDel.contains(line->old_lineno))
+                ch = staged ? 0 : ' ';
             kept = ch != 0;
             if (!kept) continue;
             if (ch != ' ') ++changes;
@@ -773,6 +767,7 @@ QByteArray partialPatch(const QString &root, bool staged, const QString &path, c
         }
         if (!changes) continue;
         picked += changes;
+
         // the side git checks against stays exact; the other side is derived
         int os, ns;
         if (!staged) {
@@ -795,9 +790,8 @@ QByteArray partialPatch(const QString &root, bool staged, const QString &path, c
     return out;
 }
 
-WorkStatus workStatus(const QString &root)
-{
-    WorkStatus ws;
+WorkStatus workStatus(const QString &root) {
+    WorkStatus ws = {};
     GRepo r;
     if (!openRepo(r, root)) {
         ws.error = gitErr();
@@ -808,8 +802,7 @@ WorkStatus workStatus(const QString &root)
     git_status_options o;
     git_status_options_init(&o, GIT_STATUS_OPTIONS_VERSION);
     o.show = GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
-    o.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED | GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX | GIT_STATUS_OPT_EXCLUDE_SUBMODULES
-              | GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
+    o.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED | GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX | GIT_STATUS_OPT_EXCLUDE_SUBMODULES | GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
     GStatus st;
     if (git_status_list_new(st.out(), r, &o) != 0) {
         ws.error = gitErr();
@@ -818,11 +811,11 @@ WorkStatus workStatus(const QString &root)
     auto entry = [](const QString &path, const QString &oldPath, const char *status, bool untracked) {
         const int slash = path.lastIndexOf(QLatin1Char('/'), path.endsWith(QLatin1Char('/')) ? -2 : -1);
         return QVariantMap{{"path", path},
-                           {"oldPath", oldPath},
-                           {"dir", slash >= 0 ? path.left(slash + 1) : QString()},
-                           {"file", slash >= 0 ? path.mid(slash + 1) : path},
-                           {"status", QString::fromLatin1(status)},
-                           {"untracked", untracked}};
+            {"oldPath", oldPath},
+            {"dir", slash >= 0 ? path.left(slash + 1) : QString()},
+            {"file", slash >= 0 ? path.mid(slash + 1) : path},
+            {"status", QString::fromLatin1(status)},
+            {"untracked", untracked}};
     };
     const size_t n = git_status_list_entrycount(st);
     for (size_t i = 0; i < n; ++i) {
@@ -835,15 +828,19 @@ WorkStatus workStatus(const QString &root)
         }
         if (s & (GIT_STATUS_INDEX_NEW | GIT_STATUS_INDEX_MODIFIED | GIT_STATUS_INDEX_DELETED | GIT_STATUS_INDEX_RENAMED | GIT_STATUS_INDEX_TYPECHANGE)) {
             const git_diff_delta *d = e->head_to_index;
-            const char *letter = (s & GIT_STATUS_INDEX_NEW) ? "A" : (s & GIT_STATUS_INDEX_DELETED) ? "D" : (s & GIT_STATUS_INDEX_RENAMED) ? "R"
-                               : (s & GIT_STATUS_INDEX_TYPECHANGE) ? "T" : "M";
+            const char *letter = (s & GIT_STATUS_INDEX_NEW) ? "A" : (s & GIT_STATUS_INDEX_DELETED)  ? "D"
+                                                                : (s & GIT_STATUS_INDEX_RENAMED)    ? "R"
+                                                                : (s & GIT_STATUS_INDEX_TYPECHANGE) ? "T"
+                                                                                                    : "M";
             const QString path = u8(d->new_file.path ? d->new_file.path : d->old_file.path);
             ws.staged.append(entry(path, (s & GIT_STATUS_INDEX_RENAMED) ? u8(d->old_file.path) : QString(), letter, false));
         }
         if (s & (GIT_STATUS_WT_NEW | GIT_STATUS_WT_MODIFIED | GIT_STATUS_WT_DELETED | GIT_STATUS_WT_TYPECHANGE | GIT_STATUS_WT_RENAMED)) {
             const git_diff_delta *d = e->index_to_workdir;
             const bool untracked = s & GIT_STATUS_WT_NEW;
-            const char *letter = untracked ? "A" : (s & GIT_STATUS_WT_DELETED) ? "D" : (s & GIT_STATUS_WT_TYPECHANGE) ? "T" : "M";
+            const char *letter = untracked ? "A" : (s & GIT_STATUS_WT_DELETED)  ? "D"
+                                               : (s & GIT_STATUS_WT_TYPECHANGE) ? "T"
+                                                                                : "M";
             ws.unstaged.append(entry(u8(d->new_file.path ? d->new_file.path : d->old_file.path), QString(), letter, untracked));
         }
     }
@@ -851,8 +848,7 @@ WorkStatus workStatus(const QString &root)
     return ws;
 }
 
-QByteArray imageBytes(const QString &root, const QString &spec)
-{
+QByteArray imageBytes(const QString &root, const QString &spec) {
     if (spec.startsWith(QLatin1String("blob/"))) {
         GRepo r;
         if (!openRepo(r, root)) return {};

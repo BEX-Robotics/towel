@@ -8,8 +8,7 @@ class QLabel;
 class QToolButton;
 
 // Paints a DiffDoc on a monospace grid: unified or split, wrapped or not.
-class DiffArea : public QAbstractScrollArea
-{
+class DiffArea : public QAbstractScrollArea {
     Q_OBJECT
 public:
     explicit DiffArea(QWidget *parent = nullptr);
@@ -18,8 +17,10 @@ public:
     void setWrap(bool w);
     bool split() const { return m_split; }
     bool wrap() const { return m_wrap; }
+
     // 0 = read-only, 1 = unstaged (hunks can be staged), 2 = staged (unstaged)
     void setStaging(int mode);
+
     // the next setDoc calls are a reload of the same file: keep scroll and hunk
     void keepPlace() { m_keepPlace = true; }
     void selectRows(int from, int to); // dev aid / tests: like a gutter drag
@@ -41,11 +42,12 @@ protected:
 
 private:
     struct Row {
-        int kind; // 0 hunk, 1 context, 2 change (split pair / unified add or del)
+        int kind;                   // 0 hunk, 1 context, 2 change (split pair / unified add or del)
         const DocLine *a = nullptr; // unified: the line; split: left (old)
         const DocLine *b = nullptr; // split: right (new)
         const QString *header = nullptr;
     };
+
     // a stageable hunk: contiguous changes, split where the context gap is > 6 lines
     struct Unit {
         int first, last; // row range of the changed lines
@@ -74,10 +76,11 @@ private:
     QFont m_font, m_bold, m_italic;
     qreal m_cw = 8;
     int m_lh = 18;
-    int m_cols = 80;     // wrap columns (unified) or per side (split)
+    int m_cols = 80; // wrap columns (unified) or per side (split)
     std::vector<Unit> m_units;
     int m_staging = 0, m_current = -1, m_hoverUnit = -1;
     bool m_keepPlace = false;
+
     // line selection (unified view): rows of changed lines
     QSet<int> m_sel;
     int m_selAnchor = -1;
@@ -85,8 +88,7 @@ private:
     QSet<int> m_selBase; // selection before the current drag
 };
 
-class DiffView : public QWidget
-{
+class DiffView : public QWidget {
     Q_OBJECT
 public:
     explicit DiffView(QWidget *parent = nullptr);

@@ -11,8 +11,7 @@ class QPushButton;
 class QHBoxLayout;
 
 // Round avatar (details panel).
-class AvatarWidget : public QWidget
-{
+class AvatarWidget : public QWidget {
 public:
     explicit AvatarWidget(int size, QWidget *parent = nullptr);
     void set(const QString &email, const QString &name, const QColor &ring);
@@ -26,8 +25,7 @@ private:
 };
 
 // Branches / remotes / tags / stashes, painted list with collapsible sections.
-class SideList : public QAbstractScrollArea
-{
+class SideList : public QAbstractScrollArea {
     Q_OBJECT
 public:
     explicit SideList(QWidget *parent = nullptr);
@@ -36,6 +34,7 @@ public:
 
 signals:
     void jumpTo(const QString &id);
+
     // entry: {kind: local|remote|tag|stash, name, id, index, current}
     void menuRequested(const QVariantMap &entry, const QPoint &globalPos);
     void activated(const QVariantMap &entry); // double-click
@@ -68,8 +67,7 @@ private:
     int m_hover = -1;
 };
 
-class Sidebar : public QWidget
-{
+class Sidebar : public QWidget {
     Q_OBJECT
 public:
     explicit Sidebar(QWidget *parent = nullptr);
@@ -81,13 +79,13 @@ private:
 };
 
 // Changed files of a commit, painted.
-class FileList : public QWidget
-{
+class FileList : public QWidget {
     Q_OBJECT
 public:
     explicit FileList(QWidget *parent = nullptr);
     void setFiles(const QVariantList &files);
     void setOpenPath(const QString &p);
+
     // "+" or "−": shows a per-row stage/unstage button on hover
     void setAction(const QString &glyph, const QString &tip);
     const QVariantList &files() const { return m_files; }
@@ -112,8 +110,7 @@ private:
     int m_hover = -1;
 };
 
-class DetailsPanel : public QScrollArea
-{
+class DetailsPanel : public QScrollArea {
     Q_OBJECT
 public:
     explicit DetailsPanel(QWidget *parent = nullptr);

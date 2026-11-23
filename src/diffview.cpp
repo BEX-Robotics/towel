@@ -12,13 +12,13 @@
 #include <QVBoxLayout>
 
 namespace {
-inline int kNumW() { return theme::z(46); }      // one line-number column
-inline int kHunkH() { return theme::z(26); }
-constexpr int kPad = 2;        // vertical padding per line row
-}
+inline int numberWidth() { return theme::z(46); } // one line-number column
+inline int hunkHeight() { return theme::z(26); }
 
-DiffArea::DiffArea(QWidget *parent) : QAbstractScrollArea(parent)
-{
+constexpr int linePad = 2; // vertical padding per line row
+} // namespace
+
+DiffArea::DiffArea(QWidget *parent) : QAbstractScrollArea(parent) {
     setFrameShape(QFrame::NoFrame);
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
     auto fonts = [this] {
@@ -41,8 +41,7 @@ DiffArea::DiffArea(QWidget *parent) : QAbstractScrollArea(parent)
     viewport()->setMouseTracking(true);
 }
 
-void DiffArea::setDoc(const DiffDoc *doc, bool loading)
-{
+void DiffArea::setDoc(const DiffDoc *doc, bool loading) {
     m_doc = doc;
     m_hoverUnit = -1;
     m_sel.clear();
@@ -68,14 +67,12 @@ void DiffArea::setDoc(const DiffDoc *doc, bool loading)
     m_current = m_units.empty() ? -1 : 0;
 }
 
-void DiffArea::setStaging(int mode)
-{
+void DiffArea::setStaging(int mode) {
     m_staging = mode;
     viewport()->update();
 }
 
-void DiffArea::buildUnits()
-{
+void DiffArea::buildUnits() {
     m_units.clear();
     int lastChange = -1, ctx = 0;
     for (int i = 0; i < int(m_rows.size()); ++i) {
@@ -93,24 +90,24 @@ void DiffArea::buildUnits()
         u.last = i;
         for (const DocLine *l : {r.a, r.b}) {
             if (!l) continue;
-            if (l->t == '-') u.del.insert(l->o);
-            else if (l->t == '+') u.add.insert(l->n);
+            if (l->t == '-')
+                u.del.insert(l->o);
+            else if (l->t == '+')
+                u.add.insert(l->n);
         }
         lastChange = i;
         ctx = 0;
     }
 }
 
-int DiffArea::rowAtY(int y) const
-{
+int DiffArea::rowAtY(int y) const {
     if (m_rows.empty()) return -1;
     auto it = std::upper_bound(m_y.begin(), m_y.end() - 1, y + verticalScrollBar()->value());
     const int r = int(it - m_y.begin()) - 1;
     return r >= 0 && r < int(m_rows.size()) ? r : -1;
 }
 
-int DiffArea::unitAtRow(int row) const
-{
+int DiffArea::unitAtRow(int row) const {
     if (row < 0) return -1;
     for (int u = 0; u < int(m_units.size()); ++u) {
         // a unit also owns the context right above it, so its button is reachable
@@ -120,12 +117,12 @@ int DiffArea::unitAtRow(int row) const
     return -1;
 }
 
-QRect DiffArea::buttonRect(int u) const
-{
+QRect DiffArea::buttonRect(int u) const {
     if (u < 0 || u >= int(m_units.size()) || !m_staging) return {};
     const QFontMetrics fm(theme::uiFont(11, true));
     const QString t = m_staging == 1 ? QStringLiteral("Stage hunk") : QStringLiteral("Unstage hunk");
     const int w = fm.horizontalAdvance(t) + 20, h = 20;
+
     // sit on the hunk header when this is the first unit after it, else on the first change
     int row = m_units[u].first;
     const int floor = u > 0 ? m_units[u - 1].last : -1;
@@ -135,12 +132,11 @@ QRect DiffArea::buttonRect(int u) const
             break;
         }
     const int top = m_y[row] - verticalScrollBar()->value();
-    const int off = m_rows[row].kind == 0 ? (kHunkH() - h) / 2 : 1;
+    const int off = m_rows[row].kind == 0 ? (hunkHeight() - h) / 2 : 1;
     return QRect(viewport()->width() - w - 12, top + off, w, h);
 }
 
-void DiffArea::setCurrent(int u, bool scroll)
-{
+void DiffArea::setCurrent(int u, bool scroll) {
     m_current = u;
     if (scroll && u >= 0 && u < int(m_units.size())) {
         const int y0 = m_y[m_units[u].first], y1 = m_y[m_units[u].last + 1];
@@ -152,45 +148,47 @@ void DiffArea::setCurrent(int u, bool scroll)
     viewport()->update();
 }
 
-QRect DiffArea::chipRect() const
-{
+QRect DiffArea::chipRect() const {
     if (m_sel.isEmpty() || !m_staging || m_split) return {};
     int last = -1;
     for (int r : m_sel) last = std::max(last, r);
     const QString t = (m_staging == 1 ? QStringLiteral("Stage %1 %2") : QStringLiteral("Unstage %1 %2"))
-                          .arg(m_sel.size()).arg(m_sel.size() == 1 ? QStringLiteral("line") : QStringLiteral("lines"));
+                          .arg(m_sel.size())
+                          .arg(m_sel.size() == 1 ? QStringLiteral("line") : QStringLiteral("lines"));
     const int w = QFontMetrics(theme::uiFont(11, true)).horizontalAdvance(t) + 24, h = 22;
     const int vh = viewport()->height();
     const int y = std::clamp(m_y[last + 1] - verticalScrollBar()->value() + 4, 4, vh - h - 4);
+
     return QRect(viewport()->width() - w - 12, y, w, h);
 }
 
-void DiffArea::emitSelection()
-{
+void DiffArea::emitSelection() {
     QSet<int> del, add;
     for (int r : m_sel) {
         const DocLine *l = m_rows[r].a;
-        if (l->t == '-') del.insert(l->o);
-        else if (l->t == '+') add.insert(l->n);
+        if (l->t == '-')
+            del.insert(l->o);
+        else if (l->t == '+')
+            add.insert(l->n);
     }
     emit applyHunk(del, add);
 }
 
 // drag / shift-click: anchor..row, added to (or removed from) the selection before the drag
-void DiffArea::selectTo(int row)
-{
+void DiffArea::selectTo(int row) {
     if (m_selAnchor < 0 || row < 0) return;
     m_sel = m_selBase;
     for (int r = std::min(row, m_selAnchor); r <= std::max(row, m_selAnchor); ++r) {
         if (m_rows[r].kind != 2) continue;
-        if (m_dragAdd) m_sel.insert(r);
-        else m_sel.remove(r);
+        if (m_dragAdd)
+            m_sel.insert(r);
+        else
+            m_sel.remove(r);
     }
     viewport()->update();
 }
 
-void DiffArea::selectRows(int from, int to)
-{
+void DiffArea::selectRows(int from, int to) {
     if (from < 0 || to >= int(m_rows.size())) return;
     m_selBase.clear();
     m_dragAdd = true;
@@ -198,8 +196,7 @@ void DiffArea::selectRows(int from, int to)
     selectTo(to);
 }
 
-bool DiffArea::event(QEvent *e)
-{
+bool DiffArea::event(QEvent *e) {
     // Esc clears the line selection before the window's "close diff" shortcut sees it
     if (e->type() == QEvent::ShortcutOverride && !m_sel.isEmpty() && static_cast<QKeyEvent *>(e)->key() == Qt::Key_Escape) {
         e->accept();
@@ -208,16 +205,14 @@ bool DiffArea::event(QEvent *e)
     return QAbstractScrollArea::event(e);
 }
 
-void DiffArea::applyCurrent()
-{
+void DiffArea::applyCurrent() {
     if (!m_sel.isEmpty() && !m_split) return emitSelection();
     if (!m_staging || m_current < 0 || m_current >= int(m_units.size())) return;
     const Unit &u = m_units[m_current];
     emit applyHunk(u.del, u.add);
 }
 
-void DiffArea::keyPressEvent(QKeyEvent *e)
-{
+void DiffArea::keyPressEvent(QKeyEvent *e) {
     if (e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) return QAbstractScrollArea::keyPressEvent(e);
     switch (e->key()) {
     case Qt::Key_J:
@@ -227,12 +222,15 @@ void DiffArea::keyPressEvent(QKeyEvent *e)
         setCurrent(std::clamp(m_current + d, 0, int(m_units.size()) - 1), true);
         return;
     }
+
     case Qt::Key_S:
         if (m_staging == 1) applyCurrent();
         return;
+
     case Qt::Key_U:
         if (m_staging == 2) applyCurrent();
         return;
+
     case Qt::Key_Escape:
         if (!m_sel.isEmpty()) {
             m_sel.clear();
@@ -241,13 +239,13 @@ void DiffArea::keyPressEvent(QKeyEvent *e)
         }
         e->ignore();
         return;
+
     default:
         QAbstractScrollArea::keyPressEvent(e);
     }
 }
 
-void DiffArea::mousePressEvent(QMouseEvent *e)
-{
+void DiffArea::mousePressEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
     if (e->button() == Qt::LeftButton && chipRect().contains(pos)) return emitSelection();
     const int row = rowAtY(pos.y());
@@ -258,8 +256,9 @@ void DiffArea::mousePressEvent(QMouseEvent *e)
         return applyCurrent();
     }
     if (u >= 0) setCurrent(u, false);
+
     // line selection: press in the gutter of the unified view
-    const bool inGutter = m_staging && !m_split && pos.x() < 2 * kNumW() + 20;
+    const bool inGutter = m_staging && !m_split && pos.x() < 2 * numberWidth() + 20;
     if (e->button() == Qt::LeftButton && inGutter && row >= 0 && m_rows[row].kind == 2) {
         const bool shift = e->modifiers() & Qt::ShiftModifier, ctrl = e->modifiers() & Qt::ControlModifier;
         if (shift && m_selAnchor >= 0) {
@@ -281,20 +280,20 @@ void DiffArea::mousePressEvent(QMouseEvent *e)
     QAbstractScrollArea::mousePressEvent(e);
 }
 
-void DiffArea::mouseReleaseEvent(QMouseEvent *e)
-{
+void DiffArea::mouseReleaseEvent(QMouseEvent *e) {
     m_dragging = false;
     QAbstractScrollArea::mouseReleaseEvent(e);
 }
 
-void DiffArea::mouseMoveEvent(QMouseEvent *e)
-{
+void DiffArea::mouseMoveEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
     if (m_dragging) {
         // autoscroll near the edges
         const int vh = viewport()->height();
-        if (pos.y() < 0) verticalScrollBar()->setValue(verticalScrollBar()->value() - m_lh);
-        else if (pos.y() > vh) verticalScrollBar()->setValue(verticalScrollBar()->value() + m_lh);
+        if (pos.y() < 0)
+            verticalScrollBar()->setValue(verticalScrollBar()->value() - m_lh);
+        else if (pos.y() > vh)
+            verticalScrollBar()->setValue(verticalScrollBar()->value() + m_lh);
         const int row = rowAtY(std::clamp(pos.y(), 0, vh - 1));
         if (row >= 0) selectTo(row);
         return;
@@ -306,36 +305,32 @@ void DiffArea::mouseMoveEvent(QMouseEvent *e)
         m_hoverChip = chip;
         viewport()->update();
     }
-    const bool gutter = m_staging && !m_split && pos.x() < 2 * kNumW() + 20;
+    const bool gutter = m_staging && !m_split && pos.x() < 2 * numberWidth() + 20;
     viewport()->setCursor(chip || (u >= 0 && buttonRect(u).contains(pos)) ? Qt::PointingHandCursor : Qt::ArrowCursor);
     viewport()->setToolTip(gutter ? QStringLiteral("Click or drag to select lines · Ctrl toggles · Shift extends") : QString());
     QAbstractScrollArea::mouseMoveEvent(e);
 }
 
-void DiffArea::leaveEvent(QEvent *e)
-{
+void DiffArea::leaveEvent(QEvent *e) {
     m_hoverUnit = -1;
     viewport()->update();
     QAbstractScrollArea::leaveEvent(e);
 }
 
-void DiffArea::setSplit(bool s)
-{
+void DiffArea::setSplit(bool s) {
     if (m_split == s) return;
     m_split = s;
     m_sel.clear();
     rebuildRows();
 }
 
-void DiffArea::setWrap(bool w)
-{
+void DiffArea::setWrap(bool w) {
     if (m_wrap == w) return;
     m_wrap = w;
     relayout();
 }
 
-void DiffArea::rebuildRows()
-{
+void DiffArea::rebuildRows() {
     m_rows.clear();
     if (m_doc && !m_loading) {
         for (const DocHunk &h : m_doc->hunks) {
@@ -367,8 +362,7 @@ void DiffArea::rebuildRows()
     relayout();
 }
 
-std::vector<int> DiffArea::breaks(const QString &text, int cols)
-{
+std::vector<int> DiffArea::breaks(const QString &text, int cols) {
     // wrap at the last space within the line width, or hard-break long words
     std::vector<int> out{0};
     int start = 0;
@@ -386,47 +380,48 @@ std::vector<int> DiffArea::breaks(const QString &text, int cols)
     return out;
 }
 
-int DiffArea::visualLines(const DocLine *l, int cols) const
-{
+int DiffArea::visualLines(const DocLine *l, int cols) const {
     if (!l || !(m_wrap || m_split) || l->text.size() <= cols) return 1;
     return int(breaks(l->text, cols).size());
 }
 
-void DiffArea::relayout()
-{
+void DiffArea::relayout() {
     const int vw = viewport()->width();
     const bool wrapping = m_wrap || m_split;
-    if (m_split) m_cols = std::max(10, int((vw / 2 - kNumW() - 16) / m_cw));
-    else m_cols = std::max(10, int((vw - 2 * kNumW() - 34) / m_cw));
+    if (m_split)
+        m_cols = std::max(10, int((vw / 2 - numberWidth() - 16) / m_cw));
+    else
+        m_cols = std::max(10, int((vw - 2 * numberWidth() - 34) / m_cw));
 
     m_y.assign(m_rows.size() + 1, 0);
     int y = 0;
     for (size_t i = 0; i < m_rows.size(); ++i) {
         m_y[i] = y;
         const Row &r = m_rows[i];
-        if (r.kind == 0) y += kHunkH();
-        else if (m_split) y += std::max(visualLines(r.a, m_cols), visualLines(r.b, m_cols)) * m_lh + kPad;
-        else y += visualLines(r.a, m_cols) * m_lh + kPad;
+        if (r.kind == 0)
+            y += hunkHeight();
+        else if (m_split)
+            y += std::max(visualLines(r.a, m_cols), visualLines(r.b, m_cols)) * m_lh + linePad;
+        else
+            y += visualLines(r.a, m_cols) * m_lh + linePad;
     }
     m_y.back() = y;
 
     const int vh = viewport()->height();
     verticalScrollBar()->setPageStep(vh);
     verticalScrollBar()->setRange(0, std::max(0, y - vh));
-    const int contentW = (wrapping || !m_doc) ? vw : int(2 * kNumW() + 34 + m_doc->maxCols * m_cw + 40);
+    const int contentW = (wrapping || !m_doc) ? vw : int(2 * numberWidth() + 34 + m_doc->maxCols * m_cw + 40);
     horizontalScrollBar()->setPageStep(vw);
     horizontalScrollBar()->setRange(0, std::max(0, contentW - vw));
     viewport()->update();
 }
 
-void DiffArea::resizeEvent(QResizeEvent *e)
-{
+void DiffArea::resizeEvent(QResizeEvent *e) {
     QAbstractScrollArea::resizeEvent(e);
     relayout();
 }
 
-void DiffArea::paintText(QPainter &p, const DocLine &l, int from, int to, qreal x, qreal top, const QColor &markBg) const
-{
+void DiffArea::paintText(QPainter &p, const DocLine &l, int from, int to, qreal x, qreal top, const QColor &markBg) const {
     to = std::min(to, int(l.text.size()));
     if (from >= to) return;
     for (const auto &m : l.marks) {
@@ -437,7 +432,8 @@ void DiffArea::paintText(QPainter &p, const DocLine &l, int from, int to, qreal 
     int pos = from;
     auto draw = [&](int a, int b, const ColorSpan *s) {
         if (a >= b) return;
-        p.setFont(s && s->bold ? m_bold : s && s->italic ? m_italic : m_font);
+        p.setFont(s && s->bold ? m_bold : s && s->italic ? m_italic
+                                                         : m_font);
         p.setPen(s && s->color ? QColor(s->color) : theme::text);
         p.drawText(QPointF(x + (a - from) * m_cw, base), l.text.mid(a, b - a));
     };
@@ -452,8 +448,7 @@ void DiffArea::paintText(QPainter &p, const DocLine &l, int from, int to, qreal 
     draw(pos, to, nullptr);
 }
 
-void DiffArea::paintEvent(QPaintEvent *)
-{
+void DiffArea::paintEvent(QPaintEvent *) {
     QPainter p(viewport());
     const int vw = viewport()->width(), vh = viewport()->height();
     p.fillRect(0, 0, vw, vh, theme::bg);
@@ -481,7 +476,7 @@ void DiffArea::paintEvent(QPaintEvent *)
             p.setPen(theme::dim);
             const QImage &img = *imgs[i];
             p.drawText(box.adjusted(12, 8, 0, 0), Qt::AlignTop | Qt::AlignLeft,
-                       QString::fromLatin1(labels[i]) + (img.isNull() ? QString() : QStringLiteral("  ·  %1 × %2").arg(img.width()).arg(img.height())));
+                QString::fromLatin1(labels[i]) + (img.isNull() ? QString() : QStringLiteral("  ·  %1 × %2").arg(img.width()).arg(img.height())));
             if (img.isNull()) {
                 p.setPen(theme::faint);
                 p.drawText(box, Qt::AlignCenter, QStringLiteral("(none)"));
@@ -503,8 +498,10 @@ void DiffArea::paintEvent(QPaintEvent *)
     size_t first = size_t(std::max<ptrdiff_t>(0, (it - m_y.begin()) - 1));
     const QFont numFont = theme::monoFont(12);
 
-    auto bgFor = [](char t) { return t == '+' ? theme::addBg : t == '-' ? theme::delBg : theme::bg; };
-    auto gutterFor = [](char t) { return t == '+' ? theme::addGutter : t == '-' ? theme::delGutter : theme::gutter; };
+    auto bgFor = [](char t) { return t == '+' ? theme::addBg : t == '-' ? theme::delBg
+                                                                        : theme::bg; };
+    auto gutterFor = [](char t) { return t == '+' ? theme::addGutter : t == '-' ? theme::delGutter
+                                                                                : theme::gutter; };
     auto markFor = [](char t) { return t == '+' ? theme::addMark : theme::delMark; };
 
     for (size_t i = first; i < m_rows.size(); ++i) {
@@ -516,23 +513,23 @@ void DiffArea::paintEvent(QPaintEvent *)
             p.fillRect(0, top, vw, h, theme::hunkBg);
             p.setFont(theme::monoFont(12));
             p.setPen(QColor(0x7f, 0x9c, 0xc4));
-            p.drawText(QRect((m_split ? kNumW() : 2 * kNumW()) + 12 - (m_split || m_wrap ? 0 : sh), top, vw * 4, h), Qt::AlignVCenter, *r.header);
+            p.drawText(QRect((m_split ? numberWidth() : 2 * numberWidth()) + 12 - (m_split || m_wrap ? 0 : sh), top, vw * 4, h), Qt::AlignVCenter, *r.header);
             continue;
         }
         auto paintSide = [&](const DocLine *l, int x0, int width, bool newSide, bool numbersBoth) {
             const char t = l ? l->t : 0;
             p.fillRect(x0, top, width, h, l ? bgFor(t) : theme::filler);
-            const int gw = numbersBoth ? 2 * kNumW() : kNumW();
+            const int gw = numbersBoth ? 2 * numberWidth() : numberWidth();
             p.fillRect(x0, top, gw, h, l ? gutterFor(t) : theme::filler);
             if (!l) return;
             p.setFont(numFont);
             p.setPen(theme::faint);
             if (numbersBoth) {
-                if (l->o >= 0) p.drawText(QRect(x0, top + 1, kNumW() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->o));
-                if (l->n >= 0) p.drawText(QRect(x0 + kNumW(), top + 1, kNumW() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->n));
+                if (l->o >= 0) p.drawText(QRect(x0, top + 1, numberWidth() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->o));
+                if (l->n >= 0) p.drawText(QRect(x0 + numberWidth(), top + 1, numberWidth() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(l->n));
             } else {
                 const int no = newSide ? l->n : l->o;
-                if (no >= 0) p.drawText(QRect(x0, top + 1, kNumW() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(no));
+                if (no >= 0) p.drawText(QRect(x0, top + 1, numberWidth() - 8, m_lh), Qt::AlignRight | Qt::AlignVCenter, QString::number(no));
             }
             int textX = x0 + gw + 8;
             if (numbersBoth) {
@@ -561,9 +558,8 @@ void DiffArea::paintEvent(QPaintEvent *)
             paintSide(r.a, 0, half, false, false);
             paintSide(r.b, half, vw - half, true, false);
             p.fillRect(half - 1, top, 1, h, theme::border);
-        } else {
+        } else
             paintSide(r.a, 0, vw, r.a->t != '-', true);
-        }
     }
 
     // selected lines: tinted gutter with an accent edge
@@ -571,8 +567,8 @@ void DiffArea::paintEvent(QPaintEvent *)
         for (int r : m_sel) {
             const int top = m_y[r] - sv, h = m_y[r + 1] - m_y[r];
             if (top + h < 0 || top > vh) continue;
-            p.fillRect(0, top, 2 * kNumW() + 18, h, QColor(theme::accent.red(), theme::accent.green(), theme::accent.blue(), 70));
-            p.fillRect(2 * kNumW() + 16, top, 2, h, theme::accent);
+            p.fillRect(0, top, 2 * numberWidth() + 18, h, QColor(theme::accent.red(), theme::accent.green(), theme::accent.blue(), 70));
+            p.fillRect(2 * numberWidth() + 16, top, 2, h, theme::accent);
         }
 
     // current hunk marker and the stage/unstage button
@@ -602,15 +598,15 @@ void DiffArea::paintEvent(QPaintEvent *)
         p.setFont(theme::uiFont(11, true));
         p.setPen(QColor(0x0e, 0x12, 0x18));
         p.drawText(cr, Qt::AlignCenter,
-                   (m_staging == 1 ? QStringLiteral("Stage %1 %2") : QStringLiteral("Unstage %1 %2"))
-                       .arg(m_sel.size()).arg(m_sel.size() == 1 ? QStringLiteral("line") : QStringLiteral("lines")));
+            (m_staging == 1 ? QStringLiteral("Stage %1 %2") : QStringLiteral("Unstage %1 %2"))
+                .arg(m_sel.size())
+                .arg(m_sel.size() == 1 ? QStringLiteral("line") : QStringLiteral("lines")));
     }
 }
 
 // ---------- DiffView ----------
 
-DiffView::DiffView(QWidget *parent) : QWidget(parent)
-{
+DiffView::DiffView(QWidget *parent) : QWidget(parent) {
     auto *bar = new QWidget(this);
     bar->setFixedHeight(theme::z(40));
     bar->setAutoFillBackground(true);
@@ -628,6 +624,7 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent)
         b->setCheckable(checkable);
         b->setFocusPolicy(Qt::NoFocus);
         b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred); // the path label gives way, not the buttons
+
         return b;
     };
     auto *back = mk(QStringLiteral("←"), QStringLiteral("Back to graph (Esc)"), false);
@@ -699,8 +696,7 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent)
     setOptions(false, false, false);
 }
 
-void DiffView::setOptions(bool full, bool split, bool wrap)
-{
+void DiffView::setOptions(bool full, bool split, bool wrap) {
     m_full = full;
     m_fullBtn->setChecked(full);
     m_hunks->setChecked(!full);
@@ -712,15 +708,17 @@ void DiffView::setOptions(bool full, bool split, bool wrap)
     m_area->setWrap(wrap);
 }
 
-void DiffView::setDoc(const DiffDoc *doc, bool loading)
-{
+void DiffView::setDoc(const DiffDoc *doc, bool loading) {
     m_area->setDoc(doc, loading);
     if (!doc) return;
     const DiffData &m = doc->meta;
     const QColor sc = theme::statusColor(m.status);
     m_status->setText(m.status);
     m_status->setStyleSheet(QStringLiteral("background: rgba(%1,%2,%3,46); color: %4; border-radius: 4px;")
-                                .arg(sc.red()).arg(sc.green()).arg(sc.blue()).arg(sc.name()));
+            .arg(sc.red())
+            .arg(sc.green())
+            .arg(sc.blue())
+            .arg(sc.name()));
     const int slash = m.path.lastIndexOf(QLatin1Char('/'));
     QString html = QStringLiteral("<span style='color:#7c8390'>%1</span><b>%2</b>")
                        .arg(m.path.left(slash + 1).toHtmlEscaped(), m.path.mid(slash + 1).toHtmlEscaped());
@@ -728,11 +726,11 @@ void DiffView::setDoc(const DiffDoc *doc, bool loading)
     m_path->setText(html);
     m_stats->setText(loading ? QString()
                              : QStringLiteral("<span style='color:#4cc26b'>+%1</span>&nbsp;&nbsp;<span style='color:#e5534b'>−%2</span>")
-                                   .arg(doc->additions).arg(doc->deletions));
+                                   .arg(doc->additions)
+                                   .arg(doc->deletions));
 }
 
-void DiffView::setModeLabel(const QString &mode)
-{
+void DiffView::setModeLabel(const QString &mode) {
     m_mode->setText(mode.toUpper());
     m_mode->setVisible(!mode.isEmpty());
 }
