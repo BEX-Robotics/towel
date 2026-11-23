@@ -49,7 +49,21 @@ CommitView::CommitView(CommitModel *model, QWidget *parent) : QAbstractScrollAre
     connect(AvatarCache::instance(), &AvatarCache::ready, viewport(), qOverload<>(&QWidget::update));
 }
 
-int CommitView::graphWidth() const { return std::min(std::max(m_model->lanes(), 2) * kLaneW + 16, 300); }
+// As wide as the lanes on screen (plus a page either side, so it doesn't
+// twitch on every scroll step), not the widest point anywhere in history.
+int CommitView::graphWidth() const
+{
+    const int sv = verticalScrollBar()->value(), h = viewport()->height();
+    const int first = std::max(0, sv / kRowH - h / kRowH), last = std::min(m_model->count() - 1, (sv + 2 * h) / kRowH);
+    int lanes = 1;
+    for (int r = first; r <= last; ++r) {
+        const CommitRow *row = m_model->row(r);
+        lanes = std::max(lanes, int(row->col) + 1);
+        const Edge *e = m_model->edgesOf(row);
+        for (int k = 0; k < row->edgeCount; ++k) lanes = std::max({lanes, int(e[k].a) + 1, int(e[k].b) + 1});
+    }
+    return std::min(std::max(lanes, 2) * kLaneW + 16, 400);
+}
 int CommitView::refsWidth() const { return viewport()->width() > 760 ? 176 : 0; }
 int CommitView::authorWidth() const { return viewport()->width() > 1000 ? 150 : 0; }
 int CommitView::dateWidth() const { return viewport()->width() > 700 ? 96 : 0; }
@@ -100,6 +114,7 @@ void CommitView::paintEvent(QPaintEvent *)
     const int sv = verticalScrollBar()->value();
     const int first = sv / kRowH;
     const int last = std::min(m_model->count() - 1, (sv + h) / kRowH);
+    m_gw = graphWidth();
     for (int r = first; r <= last; ++r) paintRow(p, r, r * kRowH - sv);
 }
 
@@ -203,7 +218,7 @@ void CommitView::paintRow(QPainter &p, int row, int y)
 {
     const CommitRow *r = m_model->row(row);
     const int w = viewport()->width();
-    const int gw = graphWidth();
+    const int gw = m_gw;
     const QColor lane = theme::lane(r->color);
     const bool cur = row == m_current;
 
@@ -378,7 +393,7 @@ bool CommitView::viewportEvent(QEvent *e)
                 QStringList refs;
                 for (const auto &g : m_model->refs(r)) refs << g.name + (g.local && g.remote ? QStringLiteral("  (local + remote)") : g.remote ? QStringLiteral("  (remote)") : g.tag ? QStringLiteral("  (tag)") : QString());
                 tip = refs.join(QLatin1Char('\n'));
-            } else if (x > refsWidth() + graphWidth()) {
+            } else if (x > refsWidth() + m_gw) {
                 QStringList refs;
                 for (const auto &g : m_model->refs(r)) refs << g.name;
                 tip = m_model->summary(r);

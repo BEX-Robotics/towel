@@ -34,6 +34,7 @@ private:
     void relayout();
     int rowAt(int y) const;
     int graphWidth() const;
+    int m_gw = 60; // graph width used by the last paint
     int refsWidth() const; // left column with branch/tag chips; 0 when narrow (chips go inline)
     int authorWidth() const;
     int dateWidth() const;

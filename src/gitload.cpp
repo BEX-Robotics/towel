@@ -345,10 +345,13 @@ LoadResult loadRepo(const QString &start)
     Lanes lanes;
     if (headValid) {
         const int n = dirtyCount(repo);
+        git_oid zero;
+        std::memset(&zero, 0, sizeof zero);
+        // the current branch (and the WIP row above it) always runs down the
+        // leftmost lane, however many newer commits other branches have
+        lanes.s.push_back({true, n > 0 ? zero : headOid, lanes.newColor()});
         if (n > 0) {
             CommitRow row;
-            git_oid zero;
-            std::memset(&zero, 0, sizeof zero);
             lanes.place(&zero, {headOid}, row, res.edges);
             row.wip = true;
             res.wipCount = n;
