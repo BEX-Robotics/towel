@@ -80,5 +80,6 @@ private:
     QString m_openMode; // "" (commit file), "unstaged" or "staged"
     bool m_jumpOnHits = false;
     int m_hitPos = -1;
+    int m_idleTicks = 0;
     bool m_full = false, m_splitDiff = false, m_wrap = false;
 };

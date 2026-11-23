@@ -5,6 +5,7 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLocale>
@@ -51,6 +52,24 @@ int gitSync(const QString &root, const QStringList &args, QString *out, const QB
 }
 } // namespace
 
+QString gitDirOf(const QString &root)
+{
+    GRepo r;
+    if (!openRepo(r, root)) return {};
+    QString p = u8(git_repository_path(r));
+    while (p.endsWith(QLatin1Char('/'))) p.chop(1);
+    return p;
+}
+
+QString commonDirOf(const QString &root)
+{
+    GRepo r;
+    if (!openRepo(r, root)) return {};
+    QString p = u8(git_repository_commondir(r));
+    while (p.endsWith(QLatin1Char('/'))) p.chop(1);
+    return p;
+}
+
 Repo *Repo::instance()
 {
     if (!g_instance) g_instance = new Repo;
@@ -96,8 +115,10 @@ void Repo::open(const QString &pathOrUrl)
             m_redo.clear();
             emit undoChanged();
         }
+        const bool switched = res.root != m_path;
         m_path = res.root;
         m_name = res.name;
+        if (switched) watchGitDir();
         m_head = res.head;
         m_detached = res.detached;
         m_branch = res.currentBranch;
@@ -137,6 +158,43 @@ void Repo::checkChanged()
         m_checking = false;
         if (root == m_path && !fp.isEmpty() && fp != m_fingerprint) refresh();
     });
+}
+
+// The git dir's own files (HEAD, index, packed-refs, FETCH_HEAD...) and the ref
+// folders change on every commit, checkout, fetch and push, from any program.
+// A few dozen inotify watches; the working tree itself is left to the poll.
+void Repo::watchGitDir()
+{
+    if (!m_watcher) {
+        m_watcher = new QFileSystemWatcher(this);
+        m_watchDebounce = new QTimer(this);
+        m_watchDebounce->setSingleShot(true);
+        m_watchDebounce->setInterval(300);
+        connect(m_watchDebounce, &QTimer::timeout, this, [this] {
+            checkChanged();
+            loadStatus();
+        });
+        auto changed = [this](const QString &path) {
+            if (QFileInfo(path).isDir() && !m_watcher->directories().contains(path)) m_watcher->addPath(path);
+            if (path.endsWith(QLatin1String("/refs/heads")) || path.contains(QLatin1String("/refs/remotes"))) watchGitDir(); // new branch folders
+            m_watchDebounce->start();
+        };
+        connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, changed);
+        connect(m_watcher, &QFileSystemWatcher::fileChanged, this, changed);
+    }
+    if (const QStringList old = m_watcher->directories() + m_watcher->files(); !old.isEmpty() && !old.first().startsWith(gitDirOf(m_path)))
+        m_watcher->removePaths(old);
+    const QString gd = gitDirOf(m_path), common = commonDirOf(m_path);
+    if (gd.isEmpty()) return;
+    QStringList paths{gd, common, common + QStringLiteral("/refs/heads"), common + QStringLiteral("/refs/tags")};
+    QDirIterator it(common + QStringLiteral("/refs"), QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext() && paths.size() < 200) paths << it.next();
+    paths.removeDuplicates();
+    const QStringList have = m_watcher->directories();
+    QStringList add;
+    for (const QString &p : paths)
+        if (!have.contains(p) && QFileInfo(p).isDir()) add << p;
+    if (!add.isEmpty()) m_watcher->addPaths(add);
 }
 
 void Repo::loadDetails(const QString &id)

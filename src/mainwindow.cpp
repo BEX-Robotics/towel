@@ -336,7 +336,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_repo(Repo::inst
     auto *poll = new QTimer(this);
     poll->setInterval(4000);
     connect(poll, &QTimer::timeout, this, [this] {
-        if (isActiveWindow()) m_repo->checkChanged();
+        // active: every 4 s; in the background the .git watcher catches commits, pushes
+        // and checkouts, and this slower poll catches plain file edits
+        if (isActiveWindow() || ++m_idleTicks % 8 == 0) {
+            m_repo->checkChanged();
+        }
     });
     poll->start();
     updateOp();

@@ -1,4 +1,6 @@
 #pragma once
+#include <QFileSystemWatcher>
+#include <QTimer>
 #include <QProcessEnvironment>
 #include <QSet>
 #include <functional>
@@ -45,6 +47,7 @@ public:
     void open(const QString &pathOrUrl);
     void refresh();
     void checkChanged();
+    void watchGitDir(); // inotify on .git so commits/pushes from elsewhere show up while in the background
     void loadDetails(const QString &id);
     void loadDiff(const QString &id, const QString &path, const QString &oldPath, bool full);
     void clearDiff();
@@ -133,6 +136,8 @@ private:
     void moveRef(const UndoEntry &e, bool back);
     QPair<QString, QString> headRef() const; // ref name ("HEAD" when detached), oid
 
+    QFileSystemWatcher *m_watcher = nullptr;
+    QTimer *m_watchDebounce = nullptr;
     CommitModel m_commits;
     DiffDoc m_diff;
     QString m_path, m_name, m_head, m_upstream, m_fingerprint, m_branch;
