@@ -1,10 +1,14 @@
 #include "theme.h"
-#include <algorithm>
-#include <QWidget>
+
 #include <QApplication>
 #include <QFontDatabase>
+#include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWidget>
+
+#include <algorithm>
+#include <cmath>
 
 namespace theme {
 
@@ -43,6 +47,28 @@ Zoom *Zoom::instance() {
     return &z;
 }
 
+int zp(int px) { return int(px * std::sqrt(zoom()) + 0.5); }
+
+int lineHeight(int px) { return QFontMetrics(uiFont(px)).height(); }
+
+namespace {
+// Scales one size of a widget, keeping its unzoomed value in a property so repeated steps
+// never drift. If the widget changed the size itself since we last set it, that new value
+// becomes the base.
+int rescaled(QWidget *w, const char *name, int current, double oldZoom) {
+    const QVariant stored = w->property(name);
+    double base = current / oldZoom;
+    if (stored.isValid()) {
+        const QPointF p = stored.toPointF(); // x: base, y: the value we last applied
+        if (int(p.y()) == current) base = p.x();
+    }
+
+    const int now = std::max(1, int(base * g_zoom + 0.5));
+    w->setProperty(name, QPointF(base, now));
+    return now;
+}
+} // namespace
+
 void setZoom(double factor) {
     factor = std::clamp(factor, 0.6, 3.0);
     if (qFuzzyCompare(factor, g_zoom)) return;
@@ -50,30 +76,23 @@ void setZoom(double factor) {
     g_zoom = factor;
     QApplication::setFont(uiFont(13));
 
-    // styled widgets only pick up the new application font when the sheet is re-applied
-    if (auto *app = qobject_cast<QApplication *>(QCoreApplication::instance())) app->setStyleSheet(app->styleSheet());
-
-    // widgets built at the old zoom: their explicit fonts and fixed sizes, scaled
-    // from the size they were built with (kept in a property, so no rounding drift)
     for (QWidget *w : QApplication::allWidgets()) {
-        if (w->testAttribute(Qt::WA_SetFont) && w->font().pixelSize() > 0) {
-            QVariant base = w->property("towelPx");
-            if (!base.isValid()) w->setProperty("towelPx", base = w->font().pixelSize() / old);
+        // A styled widget does not pick up a new application font by itself (and re-applying
+        // the style sheet would restore each font to its first-styled size), so widgets that
+        // follow the application font get it set directly, every time.
+        if (!w->testAttribute(Qt::WA_SetFont) || w->property("towelAppFont").toBool()) {
+            w->setFont(QApplication::font(w));
+            w->setProperty("towelAppFont", true);
+        } else if (w->font().pixelSize() > 0) {
             QFont f = w->font();
-            f.setPixelSize(std::max(6, int(base.toDouble() * g_zoom + 0.5)));
+            f.setPixelSize(std::max(6, rescaled(w, "towelPx", f.pixelSize(), old)));
             w->setFont(f);
         }
-        if (w->minimumHeight() == w->maximumHeight() && w->minimumHeight() > 0) {
-            QVariant base = w->property("towelH");
-            if (!base.isValid()) w->setProperty("towelH", base = w->minimumHeight() / old);
-            w->setFixedHeight(int(base.toDouble() * g_zoom + 0.5));
-        }
-        if (w->minimumWidth() == w->maximumWidth() && w->minimumWidth() > 0) {
-            QVariant base = w->property("towelW");
-            if (!base.isValid()) w->setProperty("towelW", base = w->minimumWidth() / old);
-            w->setFixedWidth(int(base.toDouble() * g_zoom + 0.5));
-        }
+
+        if (w->minimumHeight() == w->maximumHeight() && w->minimumHeight() > 0) w->setFixedHeight(rescaled(w, "towelH", w->minimumHeight(), old));
+        if (w->minimumWidth() == w->maximumWidth() && w->minimumWidth() > 0) w->setFixedWidth(rescaled(w, "towelW", w->minimumWidth(), old));
     }
+
     emit Zoom::instance() -> changed();
 }
 

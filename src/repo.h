@@ -138,8 +138,11 @@ private:
     void moveRef(const UndoEntry &e, bool back);
     QPair<QString, QString> headRef() const; // ref name ("HEAD" when detached), oid
 
-    QFileSystemWatcher *m_watcher = nullptr;
-    QTimer *m_watchDebounce = nullptr;
+    void watchRefFolders();
+    QFileSystemWatcher *m_watcher = 0;
+    QString m_watchedGitDir, m_watchedCommonDir;
+    bool m_rescanRefs = false;
+    QTimer *m_watchDebounce = 0;
     CommitModel m_commits;
     DiffDoc m_diff = {};
     QString m_path, m_name, m_head, m_upstream, m_fingerprint, m_branch;

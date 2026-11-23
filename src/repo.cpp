@@ -51,6 +51,7 @@ int gitSync(const QString &root, const QStringList &args, QString *out, const QB
 }
 } // namespace
 
+namespace {
 QString gitDirOf(const QString &root) {
     GRepo r;
     if (!openRepo(r, root)) return {};
@@ -66,6 +67,7 @@ QString commonDirOf(const QString &root) {
     while (p.endsWith(QLatin1Char('/'))) p.chop(1);
     return p;
 }
+} // namespace
 
 Repo *Repo::instance() {
     if (!g_instance) g_instance = new Repo;
@@ -162,29 +164,41 @@ void Repo::watchGitDir() {
         m_watchDebounce->setSingleShot(true);
         m_watchDebounce->setInterval(300);
         connect(m_watchDebounce, &QTimer::timeout, this, [this] {
+            if (m_rescanRefs) watchRefFolders();
+            m_rescanRefs = false;
             checkChanged();
             loadStatus();
         });
         auto changed = [this](const QString &path) {
-            if (QFileInfo(path).isDir() && !m_watcher->directories().contains(path)) m_watcher->addPath(path);
-            if (path.endsWith(QLatin1String("/refs/heads")) || path.contains(QLatin1String("/refs/remotes"))) watchGitDir(); // new branch folders
+            // a new branch folder (refs/heads/feature/...) needs a watch of its own
+            if (path.startsWith(m_watchedCommonDir + QStringLiteral("/refs"))) m_rescanRefs = true;
             m_watchDebounce->start();
         };
         connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, changed);
         connect(m_watcher, &QFileSystemWatcher::fileChanged, this, changed);
     }
-    if (const QStringList old = m_watcher->directories() + m_watcher->files(); !old.isEmpty() && !old.first().startsWith(gitDirOf(m_path)))
-        m_watcher->removePaths(old);
-    const QString gd = gitDirOf(m_path), common = commonDirOf(m_path);
-    if (gd.isEmpty()) return;
-    QStringList paths{gd, common, common + QStringLiteral("/refs/heads"), common + QStringLiteral("/refs/tags")};
-    QDirIterator it(common + QStringLiteral("/refs"), QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+
+    // a different repository: drop every watch of the old one
+    if (const QStringList old = m_watcher->directories() + m_watcher->files(); !old.isEmpty()) m_watcher->removePaths(old);
+    m_watchedGitDir = gitDirOf(m_path);
+    m_watchedCommonDir = commonDirOf(m_path);
+    if (m_watchedGitDir.isEmpty()) return;
+
+    m_watcher->addPaths(QStringList{m_watchedGitDir, m_watchedCommonDir});
+    watchRefFolders();
+}
+
+// Every folder under refs/ (up to 200), so a commit, fetch or new branch anywhere shows up.
+void Repo::watchRefFolders() {
+    const QString refs = m_watchedCommonDir + QStringLiteral("/refs");
+    QStringList paths{refs, refs + QStringLiteral("/heads"), refs + QStringLiteral("/tags")};
+    QDirIterator it(refs, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
     while (it.hasNext() && paths.size() < 200) paths << it.next();
-    paths.removeDuplicates();
     const QStringList have = m_watcher->directories();
     QStringList add;
     for (const QString &p : paths)
-        if (!have.contains(p) && QFileInfo(p).isDir()) add << p;
+        if (!have.contains(p)) add << p;
+
     if (!add.isEmpty()) m_watcher->addPaths(add);
 }
 

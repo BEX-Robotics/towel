@@ -110,6 +110,6 @@ private:
     void fitToolbar();
     DiffArea *m_area;
     QLabel *m_status, *m_path, *m_stats, *m_mode;
-    QToolButton *m_hunks, *m_fullBtn, *m_unified, *m_splitBtn, *m_wrapBtn, *m_viewBtn;
+    QToolButton *m_hunks = 0, *m_fullBtn = 0, *m_unified = 0, *m_splitBtn = 0, *m_wrapBtn = 0, *m_viewBtn = 0;
     bool m_full = false;
 };

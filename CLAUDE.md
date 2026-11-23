@@ -117,7 +117,9 @@ not decide whether. Pinned versions stay pinned, to current.
 Build with `cmake --build build`. The app has dev aids for driving it without hands, in
 `MainWindow::runDemo()` and `main.cpp`:
 
-- `TOWEL_SHOT=out.png TOWEL_SHOT_DELAY=ms` saves a window grab and quits.
+- `TOWEL_SHOT=out.png TOWEL_SHOT_DELAY=ms` saves a window grab and quits. With it (or
+  `TOWEL_DEMO_SCRIPT`) set, settings go to a throwaway folder: a dev run never touches the
+  owner's window size, zoom, recent repositories or drafts.
 - `TOWEL_DEMO_ROW=n`, `TOWEL_DEMO_FILE=n`, `TOWEL_DEMO_SEARCH=text` select things at start.
 - `TOWEL_DEMO_SCRIPT="step;step"` runs steps 900 ms apart: `stage:path`, `unstage:path`,
   `stageall`, `unstageall`, `commit:msg`, `amend:msg`, `open:staged|unstaged:path`,

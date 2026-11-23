@@ -44,7 +44,7 @@ QLabel *label(QWidget *parent, int px, bool bold, const QColor &c) {
 // ---------- AvatarWidget ----------
 
 AvatarWidget::AvatarWidget(int size, QWidget *parent) : QWidget(parent) {
-    setFixedSize(size, size);
+    setFixedSize(theme::z(size), theme::z(size));
     connect(AvatarCache::instance(), &AvatarCache::ready, this, qOverload<>(&QWidget::update));
 }
 
@@ -266,10 +266,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent) {
 // ---------- FileList ----------
 
 FileList::FileList(QWidget *parent) : QWidget(parent) {
-    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, [this] {
-        updateGeometry();
-        update();
-    });
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, this, [this] { setFiles(m_files); });
     setMouseTracking(true);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 }

@@ -47,7 +47,7 @@ void setBg(QWidget *w, const QColor &c) {
 // The app logo, painted (no SVG plugin needed).
 class Logo : public QWidget {
 public:
-    explicit Logo(int size, QWidget *parent = nullptr) : QWidget(parent) { setFixedSize(size, size); }
+    explicit Logo(int size, QWidget *parent = 0) : QWidget(parent) { setFixedSize(theme::z(size), theme::z(size)); }
     static void draw(QPainter &p, const QRectF &r) {
         p.save();
         p.setRenderHint(QPainter::Antialiasing);
@@ -896,6 +896,7 @@ void MainWindow::editMessage() {
 // diff or the rebase list, whichever is showing.
 void MainWindow::sendDemoKeys(const QString &keys) {
     QWidget *target = m_center->currentWidget() == m_rebase ? static_cast<QWidget *>(m_rebase->findChild<RebaseList *>()) : m_diff->area();
+    if (!target) return;
     for (QChar c : keys) {
         const bool move = c == QLatin1Char('<') || c == QLatin1Char('>');
         const int key = move ? (c == QLatin1Char('<') ? Qt::Key_Up : Qt::Key_Down) : Qt::Key_A + (c.toUpper().unicode() - 'A');

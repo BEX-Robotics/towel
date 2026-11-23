@@ -9,6 +9,25 @@
 #include <QTimer>
 #include <git2.h>
 
+namespace {
+// The path given on the command line; else the repository we were started in;
+// else the last one opened that still exists.
+QString startRepo(const QStringList &args) {
+    for (int i = 1; i < args.size(); ++i)
+        if (!args[i].startsWith(QLatin1Char('-'))) return QDir(args[i]).absolutePath();
+
+    git_buf found = GIT_BUF_INIT;
+    const bool inRepo = git_repository_discover(&found, QDir::currentPath().toUtf8().constData(), 0, 0) == 0;
+    git_buf_dispose(&found);
+    if (inRepo) return QDir::currentPath();
+
+    for (const QString &r : QSettings().value("recentRepos").toStringList())
+        if (QDir(r).exists()) return r;
+
+    return QDir::currentPath();
+}
+} // namespace
+
 int main(int argc, char *argv[]) {
     // On a KDE session Qt would load the Plasma platform theme: ~750 extra
     // libraries (KIO, Qt Quick, QML, OpenGL, Mesa/LLVM) only to style dialogs
@@ -54,20 +73,19 @@ int main(int argc, char *argv[]) {
     // and fragment the heap; we read each object once, so it buys nothing.
     git_libgit2_opts(GIT_OPT_ENABLE_CACHING, 0);
 
-    QString start;
-    const QStringList args = app.arguments();
-    for (int i = 1; i < args.size(); ++i)
-        if (!args[i].startsWith(QLatin1Char('-'))) start = QDir(args[i]).absolutePath();
-    if (start.isEmpty()) {
-        // no path given: the repository we were started in, else the last one opened
-        git_buf found = GIT_BUF_INIT;
-        if (git_repository_discover(&found, QDir::currentPath().toUtf8().constData(), 0, nullptr) == 0)
-            start = QDir::currentPath();
-        else
-            start = QSettings().value("recentRepos").toStringList().value(0, QDir::currentPath());
-        git_buf_dispose(&found);
+    // Dev runs (screenshots, demo scripts) get a throwaway settings folder, so a test never
+    // changes the user's window size, zoom, recent repositories or message drafts.
+    if (qEnvironmentVariableIsSet("TOWEL_SHOT") || qEnvironmentVariableIsSet("TOWEL_DEMO_SCRIPT")) {
+        // INI, because on macOS and Windows the native format ignores setPath
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        const QString dir = QDir::tempPath() + QStringLiteral("/towel-dev-settings");
+        QDir(dir).removeRecursively(); // each dev run starts from defaults, like a fresh install
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir);
     }
 
+    const QString start = startRepo(app.arguments());
+
+    QApplication::setFont(theme::uiFont(13)); // the same app font at 100% as after any zoom change
     theme::setZoom(QSettings().value("zoom", 1.0).toDouble());
     MainWindow w;
     w.show();

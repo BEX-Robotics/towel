@@ -743,7 +743,7 @@ void DiffView::fitToolbar() {
     // what the bar needs with every option button showing, the path at its minimum
     int need = theme::z(250); // back, status, stats, ↑ ↓, margins
     for (QToolButton *b : {m_hunks, m_fullBtn, m_unified, m_splitBtn, m_wrapBtn}) need += b->minimumWidth() + theme::z(6);
-    need += m_mode->isVisible() ? m_mode->sizeHint().width() : 0;
+    need += m_mode->isHidden() ? 0 : m_mode->sizeHint().width();
     const bool compact = width() < need;
     for (QToolButton *b : {m_hunks, m_fullBtn, m_unified, m_splitBtn, m_wrapBtn}) b->setVisible(!compact);
     m_viewBtn->setVisible(compact);
@@ -786,4 +786,5 @@ void DiffView::setDoc(const DiffDoc *doc, bool loading) {
 void DiffView::setModeLabel(const QString &mode) {
     m_mode->setText(mode.toUpper());
     m_mode->setVisible(!mode.isEmpty());
+    fitToolbar();
 }

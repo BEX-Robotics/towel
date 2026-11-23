@@ -114,7 +114,7 @@ void CommitView::paintEvent(QPaintEvent *) {
     const int sv = verticalScrollBar()->value();
     const int first = sv / rowHeight();
     const int last = std::min(m_model->count() - 1, (sv + h) / rowHeight());
-    m_gw = graphWidth();
+    m_graphWidthCache = graphWidth();
     for (int r = first; r <= last; ++r) paintRow(p, r, r * rowHeight() - sv);
 }
 
@@ -217,7 +217,7 @@ void CommitView::paintGraph(QPainter &p, int row, const QRectF &cell) {
 void CommitView::paintRow(QPainter &p, int row, int y) {
     const CommitRow *r = m_model->row(row);
     const int w = viewport()->width();
-    const int gw = m_gw;
+    const int gw = m_graphWidthCache;
     const QColor lane = theme::lane(r->color);
     const bool cur = row == m_current;
 
@@ -387,7 +387,7 @@ bool CommitView::viewportEvent(QEvent *e) {
                                                                                                                                   : g.tag      ? QStringLiteral("  (tag)")
                                                                                                                                                : QString());
                 tip = refs.join(QLatin1Char('\n'));
-            } else if (x > refsWidth() + m_gw) {
+            } else if (x > refsWidth() + m_graphWidthCache) {
                 QStringList refs;
                 for (const auto &g : m_model->refs(r)) refs << g.name;
                 tip = m_model->summary(r);

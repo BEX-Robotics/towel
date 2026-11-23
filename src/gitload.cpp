@@ -25,6 +25,7 @@ struct Lanes {
         bool used = false;
         git_oid oid{};
         int color = 0;
+        bool reserved = false; // held for a commit further down; no line until it is reached
     };
     std::vector<Slot> s;
     int next = 0;
@@ -63,11 +64,11 @@ struct Lanes {
         }
 
         for (size_t i = 0; i < s.size(); ++i) {
-            if (!s[i].used) continue;
+            if (!s[i].used || s[i].reserved) continue;
             const bool m = git_oid_equal(&s[i].oid, id);
             pool.push_back({quint16(i), quint16(m ? col : int(i)), quint8(m ? 1 : 0), quint8(s[i].color)});
         }
-        for (int m : matches) s[m].used = false;
+        for (int m : matches) s[m].used = s[m].reserved = false;
 
         if (!parents.empty()) {
             if (col >= int(s.size())) s.resize(col + 1);
@@ -75,6 +76,7 @@ struct Lanes {
             pool.push_back({quint16(col), quint16(col), 2, quint8(color)});
             for (size_t pi = 1; pi < parents.size(); ++pi) {
                 int j = find(&parents[pi]);
+                if (j >= 0) s[j].reserved = false; // a merge into the kept lane draws its line from here
                 int c;
                 if (j < 0) {
                     j = freeSlot();
@@ -340,7 +342,7 @@ LoadResult loadRepo(const QString &start) {
 
         // the current branch (and the WIP row above it) always runs down the
         // leftmost lane, however many newer commits other branches have
-        lanes.s.push_back({true, n > 0 ? zero : headOid, lanes.newColor()});
+        lanes.s.push_back({true, n > 0 ? zero : headOid, lanes.newColor(), true});
         if (n > 0) {
             CommitRow row = {};
             lanes.place(&zero, {headOid}, row, res.edges);
