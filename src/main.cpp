@@ -73,7 +73,8 @@ int main(int argc, char *argv[])
 
     // Dev aid: TOWEL_SHOT=/path.png [TOWEL_SHOT_DELAY=ms] saves a window grab and quits.
     if (const QString shot = qEnvironmentVariable("TOWEL_SHOT"); !shot.isEmpty()) {
-        QTimer::singleShot(qEnvironmentVariableIntValue("TOWEL_SHOT_DELAY") ?: 4000, &app, [&w, shot] {
+        const int delay = qEnvironmentVariableIntValue("TOWEL_SHOT_DELAY");
+        QTimer::singleShot(delay > 0 ? delay : 4000, &app, [&w, shot] {
             w.grab().save(shot);
             QCoreApplication::quit();
         });
