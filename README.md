@@ -10,6 +10,18 @@ A fast, good-looking git history viewer for Linux, built with Qt 6 Widgets (ever
 - **Sync**: fetch, pull (always `--rebase --autostash`), push (`--force-with-lease` when needed), edit commit messages
 - Reads history with libgit2 off the UI thread (66k commits in ~0.6 s); write operations shell out to `git`, so your SSH keys, hooks and config just work
 
+## Download
+
+Grab the latest build from [Releases](https://github.com/pavel-teramips/towel/releases/latest):
+
+- **Linux:** `Towel-…-linux-x86_64.AppImage`. Make it executable (`chmod +x`) and run it.
+- **macOS (Apple Silicon):** `Towel-…-macos-arm64.dmg`. The app is not signed yet, so the
+  first time, right-click it → Open.
+- **Windows:** `Towel-…-windows-x64.zip`. Unzip anywhere and run `towel.exe`. SmartScreen may
+  warn because the app is not signed yet: More info → Run anyway.
+
+Towel needs `git` on your PATH for pushing, pulling and committing.
+
 ## Build
 
 ```sh
