@@ -105,6 +105,29 @@ jobs:
           cp LICENSE README.md Towel/
           7z a "out/Towel-$VER-windows-x64.zip" Towel
 
+      # Launch the packaged app on this repo, grab the window and quit: proves it
+      # starts on a real machine of each OS, and the screenshot shows how it looks.
+      - name: Smoke test
+        env:
+          TOWEL_SHOT: ${{ github.workspace }}/screenshot-${{ matrix.name }}.png
+          TOWEL_SHOT_DELAY: "6000"
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   export QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1; APP=$(ls out/*.AppImage) ;;
+            macOS)   APP=build/towel.app/Contents/MacOS/towel ;;
+            Windows) APP=Towel/towel.exe ;;
+          esac
+          chmod +x "$APP" 2>/dev/null || true
+          timeout 60 "$APP" "$GITHUB_WORKSPACE" || echo "exit code $?"
+          test -s "$TOWEL_SHOT" || { echo "::error::Towel did not start: no screenshot"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-${{ matrix.name }}
+          path: screenshot-${{ matrix.name }}.png
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: towel-${{ matrix.name }}
