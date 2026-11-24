@@ -46,6 +46,7 @@ private:
     void zoomBy(int steps);
     void addResetMenu(QMenu *menu, const QString &id);
     void addPushActions(QMenu *menu, const QString &id);
+    void autoFetch(QPushButton *fetch);
     void askBeforePull();
     void recentMenu();
     void commitMenu(int row, const QPoint &pos);

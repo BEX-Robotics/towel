@@ -60,6 +60,7 @@ public:
     // rebases onto it. Checks run on a worker; nothing is rewritten or pushed when they fail.
     void pushPart(const QString &rev, bool only, const QString &fingerprint = {});
     void fetch();
+    void fetchQuietly();
 
     // asked before a partial push rebases onto a remote branch that moved on; false cancels
     void setAskPull(std::function<bool(const QString &remoteBranch, int commits)> ask) { m_askPull = std::move(ask); }
@@ -159,6 +160,8 @@ private:
     CommitModel m_commits;
     DiffDoc m_diff = {};
     std::function<bool(const QString &, int)> m_askPull;
+    std::function<void()> m_afterFetch; // a git command clicked during a background fetch
+    bool m_bgFetching = false;
     QString m_path, m_name, m_head, m_upstream, m_fingerprint, m_branch;
     bool m_detached = false;
     int m_ahead = 0, m_behind = 0, m_lanes = 1;

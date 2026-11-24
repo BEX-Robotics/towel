@@ -15,6 +15,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 #ifdef __GLIBC__
 #include <malloc.h>
+#include <utility>
 #endif
 
 namespace {
@@ -388,6 +389,13 @@ void Repo::dismissOp() {
 
 void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input, const QProcessEnvironment *env, const std::function<void(bool)> &done, bool partialPush) {
     if (m_opRunning || m_path.isEmpty()) return;
+    if (m_bgFetching) { // after the background fetch
+        setOp(true, label, QStringLiteral("Waiting for the background fetch…"), false);
+        const std::optional<QProcessEnvironment> e = env ? std::optional(*env) : std::nullopt;
+        m_afterFetch = [=, this] { runGit(label, args, input, e ? &*e : nullptr, done, partialPush); };
+
+        return;
+    }
     m_opCanForce = false;
     setOp(true, label, QString(), false);
     auto *p = new QProcess(this);
@@ -425,6 +433,28 @@ void Repo::pull() {
     runGit(QStringLiteral("Pull (rebase)"), {QStringLiteral("pull"), QStringLiteral("--rebase"), QStringLiteral("--autostash")});
 }
 
+// Background fetch: no status strip, never asks for a password or passphrase (ssh has no tty and
+// no askpass; credential helpers are told not to prompt). A git command started meanwhile waits
+// for it (runGit), so the two never fight over ref locks.
+void Repo::fetchQuietly() {
+    if (m_opRunning || m_bgFetching || m_path.isEmpty()) return;
+    m_bgFetching = true;
+    const QString root = m_path;
+    QtConcurrent::run([root] {
+        QProcessEnvironment env = gitEnv();
+        env.insert(QStringLiteral("SSH_ASKPASS_REQUIRE"), QStringLiteral("never"));
+        env.insert(QStringLiteral("GCM_INTERACTIVE"), QStringLiteral("never"));
+        gitSync(root, {QStringLiteral("-c"), QStringLiteral("credential.interactive=never"), QStringLiteral("fetch"), QStringLiteral("--all"), QStringLiteral("--prune"), QStringLiteral("--quiet")}, nullptr, {}, env);
+    }).then(this, [this, root] {
+        m_bgFetching = false;
+        if (auto next = std::exchange(m_afterFetch, {})) {
+            m_opRunning = false;
+            next();
+        }
+        if (root == m_path) refresh();
+    });
+}
+
 void Repo::fetch() {
     runGit(QStringLiteral("Fetch"), {QStringLiteral("fetch"), QStringLiteral("--all"), QStringLiteral("--prune")});
 }
@@ -451,6 +481,11 @@ void Repo::push(bool force) {
 // on a worker; nothing is rewritten or pushed when they fail.
 void Repo::pushPart(const QString &rev, bool only, const QString &fingerprint) {
     if (m_opRunning || m_branch.isEmpty()) return;
+    if (m_bgFetching) {
+        setOp(true, QStringLiteral("Push"), QStringLiteral("Waiting for the background fetch…"), false);
+        m_afterFetch = [=, this] { pushPart(rev, only, fingerprint); };
+        return;
+    }
     const QString label = (only ? QStringLiteral("Push only ") : QStringLiteral("Push up to ")) + rev.left(8);
     setOp(true, label, QString(), false);
     const QString root = m_path, branch = m_branch;

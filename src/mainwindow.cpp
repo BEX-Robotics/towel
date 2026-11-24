@@ -432,6 +432,7 @@ QWidget *MainWindow::buildTopBar() {
     m_push = button(QStringLiteral("↑ Push"), QStringLiteral("git push"), bar);
     auto *refresh = button(QStringLiteral("⟳"), QStringLiteral("Refresh (F5)"), bar);
     connect(m_fetch, &QPushButton::clicked, m_repo, &Repo::fetch);
+    autoFetch(m_fetch);
     askBeforePull();
     connect(m_pull, &QPushButton::clicked, m_repo, &Repo::pull);
     connect(m_push, &QPushButton::clicked, this, [this] { m_repo->push(false); });
@@ -679,6 +680,26 @@ void MainWindow::askBeforePull() {
 
         return box.clickedButton() == pull;
     });
+}
+
+// Fetch quietly every 5 minutes, unless turned off in the Fetch button's right-click menu.
+void MainWindow::autoFetch(QPushButton *fetch) {
+    const auto on = [] { return QSettings().value("autoFetch", true).toBool(); };
+    fetch->setToolTip(QStringLiteral("git fetch --all --prune\nRight-click: fetch automatically every 5 minutes"));
+    fetch->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(fetch, &QWidget::customContextMenuRequested, this, [fetch, on](const QPoint &pos) {
+        QMenu menu;
+        QAction *a = menu.addAction(QStringLiteral("Fetch automatically every 5 minutes"));
+        a->setCheckable(true);
+        a->setChecked(on());
+        if (menu.exec(fetch->mapToGlobal(pos)) == a) QSettings().setValue("autoFetch", a->isChecked());
+    });
+    auto *timer = new QTimer(this);
+    timer->setInterval(5 * 60 * 1000);
+    connect(timer, &QTimer::timeout, this, [this, on] {
+        if (on()) m_repo->fetchQuietly();
+    });
+    timer->start();
 }
 
 void MainWindow::commitMenu(int row, const QPoint &pos) {
