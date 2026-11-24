@@ -49,6 +49,135 @@ int gitSync(const QString &root, const QStringList &args, QString *out, const QB
     if (out) *out = QString::fromUtf8(p.readAll()).trimmed();
     return p.exitStatus() == QProcess::NormalExit ? p.exitCode() : -1;
 }
+
+// The commits of `range`, newest first, as rebase plan rows. Linear history only.
+QVariantList planRange(const QString &root, const QString &range, QString *err) {
+    QString out;
+    gitSync(root, {QStringLiteral("rev-list"), QStringLiteral("--merges"), QStringLiteral("--count"), range}, &out);
+    if (out.trimmed() != QLatin1String("0")) {
+        *err = QStringLiteral("There are merge commits in this range; Towel's rebase editor handles linear history only.");
+        return {};
+    }
+    if (gitSync(root, {QStringLiteral("log"), QStringLiteral("--format=%H%x00%an%x00%ae%x00%B%x1e"), range}, &out) != 0) {
+        *err = out;
+        return {};
+    }
+    QVariantList items;
+    for (const QString &rec : out.split(QChar(0x1e), Qt::SkipEmptyParts)) {
+        const QStringList f = rec.trimmed().split(QChar(0));
+        if (f.size() < 4) continue;
+        const QString msg = f[3].trimmed();
+        items << QVariantMap{{"id", f[0]}, {"author", f[1]}, {"email", f[2]}, {"message", msg}, {"original", msg}, {"summary", msg.section(QLatin1Char('\n'), 0, 0)}};
+    }
+    if (items.size() > 500) {
+        *err = QStringLiteral("More than 500 commits; pick a newer starting point.");
+        return {};
+    }
+    return items;
+}
+
+struct PartialPush {
+    QString remote, ref, rev, err; // push `rev` to `ref` on `remote`
+    QString head;                  // HEAD's oid when checked: nothing runs if it moved since
+    QString tracking;              // the remote-tracking ref of the push target
+    QVariantList items;            // only: the reordered plan, newest first (empty: no reorder)
+    bool behind = false;           // the remote has commits HEAD lacks: rebase onto it first
+    int depth = 0;                 // behind: rev sits at HEAD~depth
+    int remoteAhead = 0;           // behind: how many commits the remote has that HEAD lacks
+    QString fingerprint;           // rev's author, date and message, to find it again after a rebase
+};
+
+// The ref on `remote` that `tracking` mirrors, under the default fetch refspec only.
+QString remoteRefOf(const QString &root, const QString &remote, const QString &tracking) {
+    QString out;
+    gitSync(root, {QStringLiteral("config"), QStringLiteral("--get-all"), QStringLiteral("remote.%1.fetch").arg(remote)}, &out);
+    const QString prefix = QStringLiteral("refs/remotes/") + remote + QLatin1Char('/');
+    const bool standard = out.split(QLatin1Char('\n')).contains(QStringLiteral("+refs/heads/*:") + prefix + QLatin1Char('*'));
+
+    return standard && tracking.startsWith(prefix) ? QStringLiteral("refs/heads/") + tracking.mid(prefix.size()) : QString();
+}
+
+// Where `branch` pushes (as plain git push would): remote, ref and tracking ref. Fills err when nowhere.
+void pushTarget(const QString &root, const QString &branch, PartialPush *p) {
+    QString out;
+    gitSync(root, {QStringLiteral("for-each-ref"), QStringLiteral("--format=%(push:remotename)%00%(push:remoteref)%00%(push)"), QStringLiteral("refs/heads/") + branch}, &out);
+    const QStringList f = out.split(QChar(0));
+    p->remote = f.value(0);
+    p->ref = f.value(1);
+    p->tracking = f.value(2);
+    if (p->ref.isEmpty() && !p->remote.isEmpty()) p->ref = remoteRefOf(root, p->remote, p->tracking); // push.default simple/current
+    if (p->remote.isEmpty() || p->remote == QLatin1String(".") || p->ref.isEmpty() || p->tracking.isEmpty())
+        p->err = QStringLiteral("This branch has no remote branch to push to. Use Push.");
+}
+
+// Identifies a commit across a rebase: author, date and message, plus its patch-id (the change
+// itself, which a clean rebase keeps).
+QString fingerprintOf(const QString &root, const QString &rev) {
+    QString meta, diff, id;
+    gitSync(root, {QStringLiteral("log"), QStringLiteral("-1"), QStringLiteral("--format=%an%x00%ae%x00%at%x00%B"), rev}, &meta);
+    gitSync(root, {QStringLiteral("diff-tree"), QStringLiteral("-p"), QStringLiteral("--root"), rev}, &diff);
+    gitSync(root, {QStringLiteral("patch-id"), QStringLiteral("--stable")}, &id, diff.toUtf8() + '\n');
+
+    return id.section(QLatin1Char(' '), 0, 0) + QChar(0) + meta;
+}
+
+// Plan for pushing just p->rev: the unpushed commits with p->rev moved to be the oldest.
+void planOnly(const QString &root, PartialPush *p) {
+    p->items = planRange(root, p->tracking + QStringLiteral("..") + p->head, &p->err);
+    qsizetype at = -1;
+    for (qsizetype i = 0; i < p->items.size() && at < 0; ++i)
+        if (p->items[i].toMap().value("id").toString() == p->rev) at = i;
+    if (at < 0 && p->err.isEmpty()) p->err = QStringLiteral("That commit is not an unpushed commit of this branch.");
+    if (at < 0 || at == p->items.size() - 1) {
+        p->items.clear(); // already the oldest: no reorder
+        return;
+    }
+    p->items.move(at, p->items.size() - 1);
+}
+
+// Worker: fetches the push target, then checks that pushing `rev` (only: just `rev`) is safe.
+// With `fingerprint` (a retry after rebasing), `rev` must still be the same commit.
+PartialPush planPartialPush(const QString &root, const QString &branch, const QString &rev, bool only, const QString &fingerprint) {
+    PartialPush p = {};
+    QString out;
+    pushTarget(root, branch, &p);
+    if (!p.err.isEmpty()) return p;
+    if (gitSync(root, {QStringLiteral("fetch"), QStringLiteral("--quiet"), p.remote}, &out) != 0) {
+        p.err = out;
+        return p;
+    }
+    gitSync(root, {QStringLiteral("symbolic-ref"), QStringLiteral("-q"), QStringLiteral("HEAD")}, &out);
+    if (out != QStringLiteral("refs/heads/") + branch) {
+        p.err = QStringLiteral("The checked-out branch changed. Try again.");
+        return p;
+    }
+    gitSync(root, {QStringLiteral("rev-parse"), QStringLiteral("HEAD"), rev + QStringLiteral("^{commit}")}, &out);
+    p.head = out.section(QLatin1Char('\n'), 0, 0);
+    p.rev = out.section(QLatin1Char('\n'), 1, 1);
+    p.fingerprint = fingerprintOf(root, p.rev);
+    auto ancestor = [&](const QString &a, const QString &b) {
+        return gitSync(root, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), a, b}, nullptr) == 0;
+    };
+    if ((!fingerprint.isEmpty() && fingerprint != p.fingerprint) || !ancestor(p.rev, p.head) || ancestor(p.rev, p.tracking)) {
+        p.err = QStringLiteral("That commit is not an unpushed commit of this branch.");
+        return p;
+    }
+    if (!ancestor(p.tracking, p.head)) {
+        if (!fingerprint.isEmpty()) {
+            p.err = QStringLiteral("%1 has commits this branch doesn't. Pull first.").arg(p.tracking.section(QLatin1Char('/'), 2));
+            return p;
+        }
+        p.behind = true;
+        gitSync(root, {QStringLiteral("rev-list"), QStringLiteral("--count"), p.rev + QStringLiteral("..") + p.head}, &out);
+        p.depth = out.toInt();
+        gitSync(root, {QStringLiteral("rev-list"), QStringLiteral("--count"), p.head + QStringLiteral("..") + p.tracking}, &out);
+        p.remoteAhead = out.toInt();
+        return p;
+    }
+    if (only) planOnly(root, &p);
+    return p;
+}
+
 } // namespace
 
 namespace {
@@ -257,7 +386,7 @@ void Repo::dismissOp() {
     setOp(false, QString(), QString(), false);
 }
 
-void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input, const QProcessEnvironment *env) {
+void Repo::runGit(const QString &label, const QStringList &args, const QByteArray &input, const QProcessEnvironment *env, const std::function<void(bool)> &done, bool partialPush) {
     if (m_opRunning || m_path.isEmpty()) return;
     m_opCanForce = false;
     setOp(true, label, QString(), false);
@@ -269,15 +398,16 @@ void Repo::runGit(const QString &label, const QStringList &args, const QByteArra
         m_opOutput += QString::fromUtf8(p->readAll());
         emit opChanged();
     });
-    connect(p, &QProcess::finished, this, [this, p, label, args](int code, QProcess::ExitStatus st) {
+    connect(p, &QProcess::finished, this, [this, p, label, args, done, partialPush](int code, QProcess::ExitStatus st) {
         m_opOutput += QString::fromUtf8(p->readAll());
         p->deleteLater();
         const bool ok = st == QProcess::NormalExit && code == 0;
-        if (!ok && args.value(0) == QLatin1String("push") && !args.contains(QLatin1String("--force-with-lease")) && (m_opOutput.contains(QLatin1String("non-fast-forward")) || m_opOutput.contains(QLatin1String("[rejected]"))))
+        if (!ok && args.value(0) == QLatin1String("push") && !partialPush && !args.contains(QLatin1String("--force-with-lease")) && (m_opOutput.contains(QLatin1String("non-fast-forward")) || m_opOutput.contains(QLatin1String("[rejected]"))))
             m_opCanForce = true;
         setOp(false, label, m_opOutput.trimmed(), !ok);
         journalEnd(ok);
         emit opFinished(ok);
+        if (done) done(ok);
         refresh();
     });
     connect(p, &QProcess::errorOccurred, this, [this, p, label](QProcess::ProcessError e) {
@@ -315,6 +445,44 @@ void Repo::push(bool force) {
         args << QStringLiteral("-u") << remote << m_branch;
     }
     runGit(force ? QStringLiteral("Force push (with lease)") : QStringLiteral("Push"), args);
+}
+
+// Push `id`, or (only) just `id` after moving it onto the remote tip. The checks and the fetch run
+// on a worker; nothing is rewritten or pushed when they fail.
+void Repo::pushPart(const QString &rev, bool only, const QString &fingerprint) {
+    if (m_opRunning || m_branch.isEmpty()) return;
+    const QString label = (only ? QStringLiteral("Push only ") : QStringLiteral("Push up to ")) + rev.left(8);
+    setOp(true, label, QString(), false);
+    const QString root = m_path, branch = m_branch;
+    QtConcurrent::run([=] { return planPartialPush(root, branch, rev, only, fingerprint); }).then(this, [this, label, root, branch, only](PartialPush p) {
+        // HEAD must still be the branch and commit the worker checked, also after the dialog
+        const auto moved = [&] { return root != m_path || headRef() != qMakePair(QStringLiteral("refs/heads/") + branch, p.head); };
+        if (p.err.isEmpty() && moved()) p.err = QStringLiteral("The branch moved. Try again.");
+        if (!p.err.isEmpty()) return setOp(false, label, p.err, true);
+        if (p.behind && m_askPull && !m_askPull(p.tracking.section(QLatin1Char('/'), 2), p.remoteAhead)) return setOp(false, label, QStringLiteral("Cancelled: nothing was pushed."), false);
+        if (moved()) return setOp(false, label, QStringLiteral("The branch moved. Try again."), true);
+        m_opRunning = false;
+        if (p.behind) return rebaseThenPush(p.tracking, p.depth, p.fingerprint, only);
+        if (p.items.isEmpty()) return runGit(label, {QStringLiteral("push"), p.remote, p.rev + QLatin1Char(':') + p.ref}, {}, nullptr, {}, true);
+        const int n = int(p.items.size());
+
+        // the moved commit ends up the oldest of n; --empty=keep keeps all n
+        const QString spec = QStringLiteral("HEAD~%1:").arg(n - 1) + p.ref;
+        rebase(p.tracking, p.items, {QStringLiteral("--empty=keep")}, [this, label, remote = p.remote, spec](bool ok) {
+            if (ok && sequencerState().isEmpty()) runGit(label, {QStringLiteral("push"), remote, spec}, {}, nullptr, {}, true);
+        });
+    });
+}
+
+// The remote moved on: rebase the branch onto it (as a pull would), then retry the push with the
+// same commit, found again by position and checked by its fingerprint. A conflict stops it all.
+void Repo::rebaseThenPush(const QString &tracking, int depth, const QString &fingerprint, bool only) {
+    journalBegin(QStringLiteral("rebase"), QStringLiteral("--keep"));
+    const QString rev = QStringLiteral("HEAD~%1").arg(depth);
+    runGit(QStringLiteral("Rebase onto ") + tracking.section(QLatin1Char('/'), 2), {QStringLiteral("rebase"), QStringLiteral("--autostash"), tracking}, {}, nullptr,
+        [this, rev, only, fingerprint](bool ok) {
+            if (ok && sequencerState().isEmpty()) pushPart(rev, only, fingerprint);
+        });
 }
 
 int Repo::rewordState(const QString &id) {
@@ -564,33 +732,12 @@ QVariantList Repo::rebasePlanFrom(const QString &from, QString *err, QString *ba
     }
     const bool root = gitSync(m_path, {QStringLiteral("rev-parse"), QStringLiteral("-q"), QStringLiteral("--verify"), from + QStringLiteral("^")}, &out) != 0;
     *base = root ? QString() : out.trimmed();
-    const QString range = root ? QStringLiteral("HEAD") : *base + QStringLiteral("..HEAD");
-    gitSync(m_path, {QStringLiteral("rev-list"), QStringLiteral("--merges"), QStringLiteral("--count"), range}, &out);
-    if (out.trimmed() != QLatin1String("0")) {
-        *err = QStringLiteral("There are merge commits in this range; Towel's rebase editor handles linear history only.");
-        return {};
-    }
-    if (gitSync(m_path, {QStringLiteral("log"), QStringLiteral("--format=%H%x00%an%x00%ae%x00%B%x1e"), range}, &out) != 0) {
-        *err = out;
-        return {};
-    }
-    QVariantList items;
-    for (const QString &rec : out.split(QChar(0x1e), Qt::SkipEmptyParts)) {
-        const QStringList f = rec.trimmed().split(QChar(0));
-        if (f.size() < 4) continue;
-        const QString msg = f[3].trimmed();
-        items << QVariantMap{{"id", f[0]}, {"author", f[1]}, {"email", f[2]}, {"message", msg}, {"original", msg}, {"summary", msg.section(QLatin1Char('\n'), 0, 0)}};
-    }
-    if (items.size() > 500) {
-        *err = QStringLiteral("More than 500 commits; pick a newer starting point.");
-        return {};
-    }
-    return items;
+    return planRange(m_path, root ? QStringLiteral("HEAD") : *base + QStringLiteral("..HEAD"), err);
 }
 
 // Runs `git rebase -i` with a prepared todo. Messages are applied with
 // `exec git commit --amend -F file`, so git never needs an editor.
-void Repo::rebase(const QString &base, const QVariantList &items) {
+void Repo::rebase(const QString &base, const QVariantList &items, const QStringList &extra, const std::function<void(bool)> &done) {
     if (m_opRunning || items.isEmpty()) return;
     QString gitDir;
     gitSync(m_path, {QStringLiteral("rev-parse"), QStringLiteral("--absolute-git-dir")}, &gitDir);
@@ -640,14 +787,14 @@ void Repo::rebase(const QString &base, const QVariantList &items) {
     QProcessEnvironment env = gitEnv();
     env.insert(QStringLiteral("GIT_SEQUENCE_EDITOR"), QStringLiteral("cp ") + quote(tf.fileName()));
     QStringList args{QStringLiteral("rebase"), QStringLiteral("-i"), QStringLiteral("--autostash"), QStringLiteral("--no-autosquash")};
-    args << (base.isEmpty() ? QStringLiteral("--root") : base);
+    args << extra << (base.isEmpty() ? QStringLiteral("--root") : base);
     journalBegin(QStringLiteral("rebase"), QStringLiteral("--keep"));
     auto *once = new QObject(this);
     connect(this, &Repo::opFinished, once, [this, once, dir] {
         once->deleteLater();
         if (sequencerState() != QLatin1String("rebase")) QDir(dir).removeRecursively(); // stopped rebases still need it
     });
-    runGit(QStringLiteral("Rebase"), args, {}, &env);
+    runGit(QStringLiteral("Rebase"), args, {}, &env, done);
 }
 
 QPair<QString, QString> Repo::headRef() const {

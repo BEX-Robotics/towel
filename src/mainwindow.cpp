@@ -366,6 +366,24 @@ void MainWindow::closeEvent(QCloseEvent *e) {
     QMainWindow::closeEvent(e);
 }
 
+// Recent repositories, then "Open other…".
+void MainWindow::recentMenu() {
+    QMenu menu(this);
+    const QStringList recent = QSettings().value("recentRepos").toStringList();
+    for (const QString &path : recent) {
+        if (path == m_repo->path()) continue;
+        QAction *a = menu.addAction(QDir(path).dirName() + QStringLiteral("    ") + QDir::toNativeSeparators(path), this, [this, path] {
+            m_selectedID.clear();
+            closeDiff();
+            m_repo->open(path);
+        });
+        a->setEnabled(QDir(path).exists());
+    }
+    if (!menu.isEmpty()) menu.addSeparator();
+    menu.addAction(QStringLiteral("Open other…\tCtrl+O"), this, &MainWindow::openDialog);
+    menu.exec(m_repoBtn->mapToGlobal(QPoint(0, m_repoBtn->height())));
+}
+
 QWidget *MainWindow::buildTopBar() {
     auto *bar = new QWidget(this);
     bar->setFixedHeight(theme::z(46));
@@ -375,23 +393,7 @@ QWidget *MainWindow::buildTopBar() {
     h->setSpacing(8);
     h->addWidget(new Logo(24, bar));
     m_repoBtn = button(QStringLiteral("Open repository…"), QStringLiteral("Ctrl+O"), bar);
-    connect(m_repoBtn, &QPushButton::clicked, this, [this] {
-        // recent repositories, then "Open other…"
-        QMenu menu(this);
-        const QStringList recent = QSettings().value("recentRepos").toStringList();
-        for (const QString &path : recent) {
-            if (path == m_repo->path()) continue;
-            QAction *a = menu.addAction(QDir(path).dirName() + QStringLiteral("    ") + QDir::toNativeSeparators(path), this, [this, path] {
-                m_selectedID.clear();
-                closeDiff();
-                m_repo->open(path);
-            });
-            a->setEnabled(QDir(path).exists());
-        }
-        if (!menu.isEmpty()) menu.addSeparator();
-        menu.addAction(QStringLiteral("Open other…\tCtrl+O"), this, &MainWindow::openDialog);
-        menu.exec(m_repoBtn->mapToGlobal(QPoint(0, m_repoBtn->height())));
-    });
+    connect(m_repoBtn, &QPushButton::clicked, this, &MainWindow::recentMenu);
     h->addWidget(m_repoBtn);
     m_branch = new QLabel(bar);
     m_branch->setTextFormat(Qt::RichText);
@@ -430,6 +432,7 @@ QWidget *MainWindow::buildTopBar() {
     m_push = button(QStringLiteral("↑ Push"), QStringLiteral("git push"), bar);
     auto *refresh = button(QStringLiteral("⟳"), QStringLiteral("Refresh (F5)"), bar);
     connect(m_fetch, &QPushButton::clicked, m_repo, &Repo::fetch);
+    askBeforePull();
     connect(m_pull, &QPushButton::clicked, m_repo, &Repo::pull);
     connect(m_push, &QPushButton::clicked, this, [this] { m_repo->push(false); });
     connect(refresh, &QPushButton::clicked, m_repo, &Repo::refresh);
@@ -662,6 +665,22 @@ void MainWindow::startRebase(const QString &from) {
     m_center->setCurrentWidget(m_rebase);
 }
 
+// Before a partial push rebases onto a remote branch that moved on, ask.
+void MainWindow::askBeforePull() {
+    m_repo->setAskPull([this](const QString &branch, int commits) {
+        if (qEnvironmentVariableIsSet("TOWEL_DEMO_SCRIPT")) return true; // a scripted run pulls
+        QMessageBox box(QMessageBox::Question, QStringLiteral("Remote moved on"),
+            QStringLiteral("%1 has %2 new commit%3 this branch doesn't have.").arg(branch).arg(commits).arg(commits == 1 ? QString() : QStringLiteral("s")),
+            QMessageBox::Cancel, this);
+        box.setInformativeText(QStringLiteral("Pull them first, moving your unpushed commits on top, then push?"));
+        QPushButton *pull = box.addButton(QStringLiteral("Pull, then push"), QMessageBox::AcceptRole);
+        box.setDefaultButton(pull);
+        box.exec();
+
+        return box.clickedButton() == pull;
+    });
+}
+
 void MainWindow::commitMenu(int row, const QPoint &pos) {
     const QString id = m_repo->commits()->idAt(row);
     if (id.isEmpty()) return;
@@ -706,23 +725,10 @@ void MainWindow::commitMenu(int row, const QPoint &pos) {
     menu.addAction(QStringLiteral("Revert (new commit that undoes it)"), this, [this, id, shortID] {
         gitThen(QStringLiteral("Revert ") + shortID, {QStringLiteral("revert"), QStringLiteral("--no-edit"), id}, {}, {}, {}, QStringLiteral("revert"));
     });
-    if (!onHead && !m_repo->branch().isEmpty()) {
-        QMenu *reset = menu.addMenu(QStringLiteral("Reset %1 to here").arg(m_repo->branch()));
-        reset->addAction(QStringLiteral("Soft: keep all changes staged"), this, [this, id] {
-            gitThen(QStringLiteral("Reset (soft)"), {QStringLiteral("reset"), QStringLiteral("--soft"), id}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--soft"));
-        });
-        reset->addAction(QStringLiteral("Mixed: keep changes, unstaged"), this, [this, id] {
-            gitThen(QStringLiteral("Reset (mixed)"), {QStringLiteral("reset"), QStringLiteral("--mixed"), id}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--mixed"));
-        });
-        reset->addAction(QStringLiteral("Hard: discard all changes…"), this, [this, id] {
-            if (QMessageBox::warning(this, QStringLiteral("Hard reset"),
-                    QStringLiteral("Reset %1 to %2 and DISCARD all uncommitted changes? Uncommitted work cannot be recovered.")
-                        .arg(m_repo->branch(), id.left(8)),
-                    QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) == QMessageBox::Yes)
-                gitThen(QStringLiteral("Reset (hard)"), {QStringLiteral("reset"), QStringLiteral("--hard"), id}, {}, {}, {}, QStringLiteral("reset"));
-        });
-    }
-    if (m_repo->rewordState(id)) {
+    if (!onHead && !m_repo->branch().isEmpty()) addResetMenu(&menu, id);
+    const int reword = m_repo->rewordState(id);
+    if (reword == 1 && !m_repo->upstream().isEmpty()) addPushActions(&menu, id);
+    if (reword) {
         menu.addSeparator();
         menu.addAction(QStringLiteral("Interactive rebase from here…"), this, [this, id] { startRebase(id); });
         menu.addAction(QStringLiteral("Edit message…"), this, &MainWindow::editMessage);
@@ -730,6 +736,31 @@ void MainWindow::commitMenu(int row, const QPoint &pos) {
     menu.addSeparator();
     menu.addAction(QStringLiteral("Copy SHA"), this, [this, id] { m_repo->copy(id); });
     menu.exec(pos);
+}
+
+// Soft/mixed/hard reset of the current branch to commit `id`.
+void MainWindow::addResetMenu(QMenu *menu, const QString &id) {
+    QMenu *reset = menu->addMenu(QStringLiteral("Reset %1 to here").arg(m_repo->branch()));
+    reset->addAction(QStringLiteral("Soft: keep all changes staged"), this, [this, id] {
+        gitThen(QStringLiteral("Reset (soft)"), {QStringLiteral("reset"), QStringLiteral("--soft"), id}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--soft"));
+    });
+    reset->addAction(QStringLiteral("Mixed: keep changes, unstaged"), this, [this, id] {
+        gitThen(QStringLiteral("Reset (mixed)"), {QStringLiteral("reset"), QStringLiteral("--mixed"), id}, {}, {}, {}, QStringLiteral("reset"), QStringLiteral("--mixed"));
+    });
+    reset->addAction(QStringLiteral("Hard: discard all changes…"), this, [this, id] {
+        if (QMessageBox::warning(this, QStringLiteral("Hard reset"),
+                QStringLiteral("Reset %1 to %2 and DISCARD all uncommitted changes? Uncommitted work cannot be recovered.")
+                    .arg(m_repo->branch(), id.left(8)),
+                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) == QMessageBox::Yes)
+            gitThen(QStringLiteral("Reset (hard)"), {QStringLiteral("reset"), QStringLiteral("--hard"), id}, {}, {}, {}, QStringLiteral("reset"));
+    });
+}
+
+// Push actions for an unpushed commit of the current branch.
+void MainWindow::addPushActions(QMenu *menu, const QString &id) {
+    menu->addSeparator();
+    menu->addAction(QStringLiteral("Push up to here"), this, [this, id] { m_repo->pushPart(id, false); });
+    menu->addAction(QStringLiteral("Push only this commit"), this, [this, id] { m_repo->pushPart(id, true); });
 }
 
 void MainWindow::refMenu(const QVariantMap &e, const QPoint &pos) {
@@ -923,6 +954,8 @@ void MainWindow::runDemo() {
                 startRebase(arg); // then key: steps go to the list
             else if (step == QLatin1String("rebasego"))
                 m_rebase->findChildren<QPushButton *>().last()->click();
+            else if (step.startsWith(QLatin1String("pushto:"))) m_repo->pushPart(arg, false);
+            else if (step.startsWith(QLatin1String("pushonly:"))) m_repo->pushPart(arg, true);
             else if (step.startsWith(QLatin1String("pick:")))
                 gitThen(QStringLiteral("Cherry-pick"), {QStringLiteral("cherry-pick"), arg}, {}, {}, {}, QStringLiteral("cherry-pick"));
             else if (step.startsWith(QLatin1String("mixed:")))

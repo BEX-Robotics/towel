@@ -54,7 +54,15 @@ public:
 
     void pull();
     void push(bool force = false);
+
+    // push the branch's commits up to unpushed commit `rev`; with `only`, first move it to sit
+    // right on the remote tip and push just it. Fetches first and, when the remote moved on,
+    // rebases onto it. Checks run on a worker; nothing is rewritten or pushed when they fail.
+    void pushPart(const QString &rev, bool only, const QString &fingerprint = {});
     void fetch();
+
+    // asked before a partial push rebases onto a remote branch that moved on; false cancels
+    void setAskPull(std::function<bool(const QString &remoteBranch, int commits)> ask) { m_askPull = std::move(ask); }
     void dismissOp();
 
     // any other git command, shown in the status strip; refreshes afterwards
@@ -71,7 +79,7 @@ public:
     QVariantList rebasePlanFrom(const QString &from, QString *err, QString *base);
 
     // items newest first: {id, action: pick|squash|fixup|drop, message (final, for pick rows)}
-    void rebase(const QString &base, const QVariantList &items); // "cherry-pick", "revert", "merge", "rebase" or ""
+    void rebase(const QString &base, const QVariantList &items, const QStringList &extra = {}, const std::function<void(bool)> &done = {}); // "cherry-pick", "revert", "merge", "rebase" or ""
 
     // 0 = not rewordable, 1 = rewordable (local only), 2 = rewordable but already pushed
     int rewordState(const QString &id);
@@ -116,7 +124,12 @@ signals:
 
 private:
     explicit Repo(QObject *parent = nullptr);
-    void runGit(const QString &label, const QStringList &args, const QByteArray &input = {}, const QProcessEnvironment *env = nullptr);
+
+    void rebaseThenPush(const QString &tracking, int depth, const QString &fingerprint, bool only);
+
+    // done: called once with the result when this git command ends (not when it fails to start)
+    void runGit(const QString &label, const QStringList &args, const QByteArray &input = {}, const QProcessEnvironment *env = nullptr,
+        const std::function<void(bool)> &done = {}, bool partialPush = false);
     struct IndexJob {
         QStringList args;
         QByteArray input;
@@ -145,6 +158,7 @@ private:
     QTimer *m_watchDebounce = 0;
     CommitModel m_commits;
     DiffDoc m_diff = {};
+    std::function<bool(const QString &, int)> m_askPull;
     QString m_path, m_name, m_head, m_upstream, m_fingerprint, m_branch;
     bool m_detached = false;
     int m_ahead = 0, m_behind = 0, m_lanes = 1;

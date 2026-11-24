@@ -44,6 +44,10 @@ private:
     void updateBranchChip();
     void updateUndo();
     void zoomBy(int steps);
+    void addResetMenu(QMenu *menu, const QString &id);
+    void addPushActions(QMenu *menu, const QString &id);
+    void askBeforePull();
+    void recentMenu();
     void commitMenu(int row, const QPoint &pos);
     void refMenu(const QVariantMap &entry, const QPoint &pos);
     void checkout(const QVariantMap &entry);

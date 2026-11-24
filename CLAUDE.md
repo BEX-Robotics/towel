@@ -124,7 +124,7 @@ Build with `cmake --build build`. The app has dev aids for driving it without ha
 - `TOWEL_DEMO_SCRIPT="step;step"` runs steps 900 ms apart: `stage:path`, `unstage:path`,
   `stageall`, `unstageall`, `commit:msg`, `amend:msg`, `open:staged|unstaged:path`,
   `key:jjs` (`<`/`>` are Alt+Up/Down), `rows:a-b`, `undo`, `redo`, `checkout:kind:name`,
-  `pick:sha`, `mixed:rev`, `rebase:sha`, `rebasego`, `zoom:n`.
+  `pick:sha`, `pushto:sha`, `pushonly:sha`, `mixed:rev`, `rebase:sha`, `rebasego`, `zoom:n`.
 
 Try a change on a scratch repo (`git init` in a temp dir), never on a repo someone works in.
 Never stop or restart a Towel window you did not start yourself: the owner may have a repo open in it.
