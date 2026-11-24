@@ -64,7 +64,7 @@ target_link_libraries(towel PRIVATE
 
 set_target_properties(towel PROPERTIES
   MACOSX_BUNDLE_BUNDLE_NAME "Towel"
-  MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.pavel-teramips.towel"
+  MACOSX_BUNDLE_GUI_IDENTIFIER "com.bexrobotics.towel"
   MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
   MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
 

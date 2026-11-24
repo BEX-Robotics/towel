@@ -2,7 +2,7 @@
 
 A fast, lean git history viewer and client: Qt 6 Widgets, everything custom-painted,
 libgit2 for reads, the `git` CLI for every write. GPL-3.0-or-later, public at
-github.com/pavel-teramips/towel. Tagline: "Always know where your HEAD is."
+github.com/BEX-Robotics/towel. Tagline: "Always know where your HEAD is."
 
 Working conventions are BEX Robotics' house style, adapted here: how to answer,
 how to write C++, how to commit. The rules files under `.claude/rules/` carry the detail.

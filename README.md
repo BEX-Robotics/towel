@@ -12,7 +12,7 @@ A fast, good-looking git history viewer for Linux, built with Qt 6 Widgets (ever
 
 ## Download
 
-Grab the latest build from [Releases](https://github.com/pavel-teramips/towel/releases/latest):
+Grab the latest build from [Releases](https://github.com/BEX-Robotics/towel/releases/latest):
 
 - **Linux:** `Towel-…-linux-x86_64.AppImage`. Make it executable (`chmod +x`) and run it.
 - **macOS (Apple Silicon):** `Towel-…-macos-arm64.dmg`. The app is not signed yet, so the

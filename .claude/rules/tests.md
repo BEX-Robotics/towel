@@ -7,7 +7,7 @@ paths:
 
 # Tests
 
-BEX's test policy, adapted. Towel has no test suite yet; the first one belongs in `tests/`, run by
+BEX Robotics' test policy, adapted. Towel has no test suite yet; the first one belongs in `tests/`, run by
 CTest, against small fixture repositories that a test builds with `git` in a temporary directory.
 
 ## What earns a test

@@ -4,7 +4,7 @@ name: Git and commit policy
 
 # Git and commit policy
 
-BEX's git rules (`.claude/rules/git.md` in the bex repo), adapted to Towel.
+BEX Robotics' git rules, adapted to Towel.
 
 ## Commit granularity
 
@@ -177,7 +177,8 @@ uncommitted work. Stage your own paths (`git add <paths>`), not `git add -A`.
 - Right after every commit that changes code, review it before it leaves the machine: a fresh
   reviewer that has not seen the work (the `code-review` skill, or a subagent given the diff and
   these rules files, not your conclusions). It checks correctness, then these conventions.
-- Run `python3 ~/dev/bex/scripts/check-cpp-style.py --changed <files>` over the changed C++ too.
+- Run `python3 ~/dev/bex/scripts/check-cpp-style.py --changed <files>` over the changed C++ too,
+  when that BEX checkout is present.
 - Findings are triaged (confirm/refute) and fixed in the reviewed commit, per amend-never-stack:
   `--amend` while it is still `HEAD`, `--fixup=<sha>` plus `--autosquash` once another commit sits
   on it. Then review the amended commit again: an amend is a new diff.
@@ -188,7 +189,7 @@ uncommitted work. Stage your own paths (`git add <paths>`), not `git add -A`.
 
 ## Permissions
 
-- **Pushing to `main` of github.com/pavel-teramips/towel is authorized** once a commit has had its
+- **Pushing to `main` of github.com/BEX-Robotics/towel is authorized** once a commit has had its
   review. Fetch and rebase first, per "Staying current".
 - **A release tag (`vX.Y.Z`) needs the owner's word.** CI publishes it to everyone who downloads.
 - Never rewrite pushed history (no force push to `main`); the repo is public.

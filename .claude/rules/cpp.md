@@ -6,9 +6,10 @@ paths:
 
 # C++ conventions
 
-BEX's C++ conventions (`.claude/rules/cpp.md` in the bex repo), adapted to a Qt application.
+BEX Robotics' C++ conventions, adapted to a Qt application.
 `.clang-format` does braces and spacing; `python3 ~/dev/bex/scripts/check-cpp-style.py <files>`
-checks the blank-line and structure rules (`--fix` repairs the whitespace ones). It does not know
+checks the blank-line and structure rules (`--fix` repairs the whitespace ones) where a BEX
+checkout is present; elsewhere, follow the rules below by hand. It does not know
 Qt, so its `zero-init` findings on Qt value types are noise (see Variables).
 
 ## Self-explanatory code
