@@ -3,6 +3,7 @@
 #include <QFont>
 #include <QObject>
 
+class QIcon;
 class QPainter;
 class QRectF;
 
@@ -67,7 +68,14 @@ enum class Icon { Laptop,
     Cloud,
     Tag,
     Branch,
-    Stash };
+    Stash,
+    Back,
+    Up,
+    Down,
+    Close };
 
 void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c);
+
+// A toolbar icon: `icon` drawn bold in the text color, sharp at any size and scale factor.
+QIcon toolIcon(Icon icon);
 } // namespace theme

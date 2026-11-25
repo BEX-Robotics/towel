@@ -4,6 +4,8 @@
 #include <QFontDatabase>
 #include <QFontMetrics>
 #include <QHash>
+#include <QIcon>
+#include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
 #include <QWidget>
@@ -161,12 +163,41 @@ QDialog { background: #21242b; }
 )");
 }
 
+namespace {
+// The toolbar glyphs (Back and after), on paintIcon's 16x16 grid with its pen.
+void paintToolGlyph(QPainter *p, Icon icon) {
+    switch (icon) {
+    case Icon::Back:
+        p->drawLine(QPointF(2.5, 8), QPointF(13.5, 8));
+        p->drawPolyline(QPolygonF({QPointF(7.5, 3), QPointF(2.5, 8), QPointF(7.5, 13)}));
+        break;
+
+    case Icon::Up:
+        p->drawPolyline(QPolygonF({QPointF(3, 10.5), QPointF(8, 5.5), QPointF(13, 10.5)}));
+        break;
+
+    case Icon::Down:
+        p->drawPolyline(QPolygonF({QPointF(3, 5.5), QPointF(8, 10.5), QPointF(13, 5.5)}));
+        break;
+
+    case Icon::Close:
+        p->drawLine(QPointF(4, 4), QPointF(12, 12));
+        p->drawLine(QPointF(12, 4), QPointF(4, 12));
+        break;
+
+    default:
+        break;
+    }
+}
+} // namespace
+
 void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c) {
     p->save();
     p->setRenderHint(QPainter::Antialiasing);
     p->translate(r.topLeft());
     p->scale(r.width() / 16.0, r.height() / 16.0);
-    QPen pen(c, 1.4);
+    const bool bold = icon >= Icon::Back; // toolbar glyphs: read at a glance
+    QPen pen(c, bold ? 2.0 : 1.4);
     pen.setJoinStyle(Qt::RoundJoin);
     pen.setCapStyle(Qt::RoundCap);
     p->setPen(pen);
@@ -225,8 +256,40 @@ void paintIcon(QPainter *p, Icon icon, const QRectF &r, const QColor &c) {
         p->drawPolyline(QPolygonF({QPointF(2, 9.5), QPointF(5.5, 9.5), QPointF(6.5, 11), QPointF(9.5, 11), QPointF(10.5, 9.5), QPointF(14, 9.5)}));
         break;
     }
+
+    default:
+        paintToolGlyph(p, icon);
+        break;
     }
     p->restore();
+}
+
+QIcon toolIcon(Icon icon) {
+    // drawn straight onto the painter, so it is sharp at any zoom, screen and scale factor
+    class Engine : public QIconEngine {
+    public:
+        explicit Engine(Icon icon) : m_icon(icon) {}
+        void paint(QPainter *p, const QRect &r, QIcon::Mode mode, QIcon::State) override {
+            paintIcon(p, m_icon, r, mode == QIcon::Disabled ? faint : text);
+        }
+        QIconEngine *clone() const override { return new Engine(m_icon); }
+        QPixmap pixmap(const QSize &size, QIcon::Mode mode, QIcon::State state) override {
+            return scaledPixmap(size, mode, state, 1);
+        }
+        QPixmap scaledPixmap(const QSize &size, QIcon::Mode mode, QIcon::State state, qreal scale) override {
+            QPixmap pm(size * scale);
+            pm.setDevicePixelRatio(scale);
+            pm.fill(Qt::transparent);
+            QPainter p(&pm);
+            paint(&p, QRect(QPoint(), size), mode, state);
+
+            return pm;
+        }
+
+    private:
+        Icon m_icon;
+    };
+    return QIcon(new Engine(icon));
 }
 
 } // namespace theme

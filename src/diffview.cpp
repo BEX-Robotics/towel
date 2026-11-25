@@ -615,6 +615,23 @@ void DiffArea::paintEvent(QPaintEvent *) {
 
 // ---------- DiffView ----------
 
+namespace {
+// An icon-only toolbar button, redrawn at every zoom.
+QToolButton *iconButton(QWidget *bar, theme::Icon icon, const QString &tip) {
+    auto *b = new QToolButton(bar);
+    b->setToolTip(tip);
+    b->setFocusPolicy(Qt::NoFocus);
+    auto fit = [b, icon] {
+        b->setIcon(theme::toolIcon(icon));
+        b->setIconSize(QSize(theme::z(16), theme::z(16)));
+        b->setFixedWidth(theme::z(16) + 24); // + the style sheet's 10px padding and border, each side
+    };
+    fit();
+    QObject::connect(theme::Zoom::instance(), &theme::Zoom::changed, b, fit);
+    return b;
+}
+} // namespace
+
 DiffView::DiffView(QWidget *parent) : QWidget(parent) {
     auto *bar = new ElasticBar(this);
     bar->setFixedHeight(theme::z(40));
@@ -641,7 +658,7 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
 
         return b;
     };
-    auto *back = mk(QStringLiteral("←"), QStringLiteral("Back to graph (Esc)"), false);
+    auto *back = iconButton(bar, theme::Icon::Back, QStringLiteral("Back to graph (Esc)"));
     connect(back, &QToolButton::clicked, this, &DiffView::closeRequested);
     hl->addWidget(back);
     m_mode = new QLabel(bar);
@@ -704,12 +721,16 @@ DiffView::DiffView(QWidget *parent) : QWidget(parent) {
     m_viewBtn->hide();
     hl->addWidget(m_viewBtn);
     hl->addSpacing(8);
-    auto *prev = mk(QStringLiteral("↑"), QStringLiteral("Previous file (Alt+↑)"), false);
-    auto *next = mk(QStringLiteral("↓"), QStringLiteral("Next file (Alt+↓)"), false);
+    auto *prev = iconButton(bar, theme::Icon::Up, QStringLiteral("Previous file (Alt+↑)"));
+    auto *next = iconButton(bar, theme::Icon::Down, QStringLiteral("Next file (Alt+↓)"));
+    auto *close = iconButton(bar, theme::Icon::Close, QStringLiteral("Back to graph (Esc)"));
     connect(prev, &QToolButton::clicked, this, [this] { emit stepFile(-1); });
     connect(next, &QToolButton::clicked, this, [this] { emit stepFile(1); });
+    connect(close, &QToolButton::clicked, this, &DiffView::closeRequested);
     hl->addWidget(prev);
     hl->addWidget(next);
+    hl->addSpacing(4);
+    hl->addWidget(close);
 
     auto emitOpts = [this] {
         m_full = m_fullBtn->isChecked();
@@ -741,7 +762,7 @@ void DiffView::resizeEvent(QResizeEvent *e) {
 
 void DiffView::fitToolbar() {
     // what the bar needs with every option button showing, the path at its minimum
-    int need = theme::z(250); // back, status, stats, ↑ ↓, margins
+    int need = theme::z(250) + theme::z(16) + 34; // back, status, stats, ↑ ↓ ×, margins
     for (QToolButton *b : {m_hunks, m_fullBtn, m_unified, m_splitBtn, m_wrapBtn}) need += b->minimumWidth() + theme::z(6);
     need += m_mode->isHidden() ? 0 : m_mode->sizeHint().width();
     const bool compact = width() < need;
