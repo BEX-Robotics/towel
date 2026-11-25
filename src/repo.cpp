@@ -170,6 +170,7 @@ PartialPush planPartialPush(const QString &root, const QString &branch, const QS
         return gitSync(root, {QStringLiteral("merge-base"), QStringLiteral("--is-ancestor"), a, b}, nullptr) == 0;
     };
     gitSync(root, {QStringLiteral("rev-parse"), p.tracking}, &p.trackingOid);
+
     // a retry after rebasing finds the commit again by position; HEAD is simply HEAD
     const bool retry = !fingerprint.isEmpty(), whole = rev == QLatin1String("HEAD");
     if ((retry && !whole && fingerprint != p.fingerprint) || !ancestor(p.rev, p.head) || ancestor(p.rev, p.tracking)) {
