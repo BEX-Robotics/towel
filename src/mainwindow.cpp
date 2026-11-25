@@ -366,6 +366,14 @@ void MainWindow::closeEvent(QCloseEvent *e) {
     QMainWindow::closeEvent(e);
 }
 
+// A drawn arrow before the button's text, sized with the zoom.
+void MainWindow::arrowIcon(QPushButton *b, theme::Icon icon) {
+    b->setIcon(theme::toolIcon(icon));
+    auto fit = [b] { b->setIconSize(QSize(theme::z(14), theme::z(14))); };
+    fit();
+    connect(theme::Zoom::instance(), &theme::Zoom::changed, b, fit);
+}
+
 // Recent repositories, then "Open other…".
 void MainWindow::recentMenu() {
     QMenu menu(this);
@@ -428,8 +436,10 @@ QWidget *MainWindow::buildTopBar() {
     h->addWidget(m_undoBtn);
     h->addSpacing(6);
     m_fetch = button(QStringLiteral("Fetch"), QStringLiteral("git fetch --all --prune"), bar);
-    m_pull = button(QStringLiteral("↓ Pull"), QStringLiteral("git pull --rebase --autostash"), bar);
-    m_push = button(QStringLiteral("↑ Push"), QStringLiteral("git push"), bar);
+    m_pull = button(QStringLiteral("Pull"), QStringLiteral("git pull --rebase --autostash"), bar);
+    m_push = button(QStringLiteral("Push"), QStringLiteral("git push"), bar);
+    arrowIcon(m_pull, theme::Icon::Down);
+    arrowIcon(m_push, theme::Icon::Up);
     auto *refresh = button(QStringLiteral("⟳"), QStringLiteral("Refresh (F5)"), bar);
     connect(m_fetch, &QPushButton::clicked, m_repo, &Repo::fetch);
     autoFetch(m_fetch);
@@ -511,8 +521,8 @@ void MainWindow::updateBranchChip() {
     if (m_repo->behind()) html += QStringLiteral("&nbsp;<span style='color:#e0a43a'>↓%1</span>").arg(m_repo->behind());
     m_branch->setText(QStringLiteral("⑂&nbsp;") + html);
     m_branch->setVisible(m_repo->isOpen());
-    m_pull->setText(m_repo->behind() ? QStringLiteral("↓ Pull  %1").arg(m_repo->behind()) : QStringLiteral("↓ Pull"));
-    m_push->setText(m_repo->ahead() ? QStringLiteral("↑ Push  %1").arg(m_repo->ahead()) : QStringLiteral("↑ Push"));
+    m_pull->setText(m_repo->behind() ? QStringLiteral("Pull  %1").arg(m_repo->behind()) : QStringLiteral("Pull"));
+    m_push->setText(m_repo->ahead() ? QStringLiteral("Push  %1").arg(m_repo->ahead()) : QStringLiteral("Push"));
     m_push->setToolTip(m_repo->upstream().isEmpty() ? QStringLiteral("git push (sets upstream)") : QStringLiteral("git push → ") + m_repo->upstream());
 }
 

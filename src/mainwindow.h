@@ -2,6 +2,10 @@
 #include <QMainWindow>
 #include <QVariantMap>
 
+namespace theme {
+enum class Icon;
+}
+
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -49,6 +53,7 @@ private:
     void autoFetch(QPushButton *fetch);
     void askBeforePull();
     void recentMenu();
+    void arrowIcon(QPushButton *b, theme::Icon icon);
     void commitMenu(int row, const QPoint &pos);
     void refMenu(const QVariantMap &entry, const QPoint &pos);
     void checkout(const QVariantMap &entry);
