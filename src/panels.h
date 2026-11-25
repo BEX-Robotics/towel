@@ -126,6 +126,7 @@ protected:
     bool eventFilter(QObject *, QEvent *) override;
 
 private:
+    QPushButton *shaChip(QWidget *parent);
     void showBody();
     QString m_fullBody;
     bool m_bodyOpen = false;

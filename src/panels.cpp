@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMouseEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
@@ -409,6 +410,29 @@ void FileList::leaveEvent(QEvent *) {
 
 // ---------- DetailsPanel ----------
 
+// The commit's short SHA: a click copies it as shown, the right-click menu the full one.
+QPushButton *DetailsPanel::shaChip(QWidget *parent) {
+    m_sha = new QPushButton(parent);
+    m_sha->setProperty("chip", true);
+    m_sha->setToolTip(QStringLiteral("Copy this short SHA · right-click for the full one"));
+    m_sha->setFont(theme::monoFont(12));
+    m_sha->setCursor(Qt::PointingHandCursor);
+    auto copy = [this](const QString &text) {
+        QApplication::clipboard()->setText(text);
+        m_sha->setText(QStringLiteral("copied ✓"));
+        QTimer::singleShot(1200, this, [this] { m_sha->setText(m_id.left(7)); });
+    };
+    connect(m_sha, &QPushButton::clicked, this, [this, copy] { copy(m_id.left(7)); }); // what it shows
+    m_sha->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_sha, &QWidget::customContextMenuRequested, this, [this, copy](const QPoint &pos) {
+        QMenu menu;
+        menu.addAction(QStringLiteral("Copy full SHA"), this, [this, copy] { copy(m_id); });
+        menu.exec(m_sha->mapToGlobal(pos));
+    });
+
+    return m_sha;
+}
+
 DetailsPanel::DetailsPanel(QWidget *parent) : QScrollArea(parent) {
     setWidgetResizable(true);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -461,17 +485,7 @@ DetailsPanel::DetailsPanel(QWidget *parent) : QScrollArea(parent) {
     names->addWidget(m_author);
     names->addWidget(m_when);
     ar->addLayout(names, 1);
-    m_sha = new QPushButton(m_authorRow);
-    m_sha->setProperty("chip", true);
-    m_sha->setToolTip(QStringLiteral("Copy full SHA"));
-    m_sha->setFont(theme::monoFont(12));
-    m_sha->setCursor(Qt::PointingHandCursor);
-    ar->addWidget(m_sha);
-    connect(m_sha, &QPushButton::clicked, this, [this] {
-        QApplication::clipboard()->setText(m_id);
-        m_sha->setText(QStringLiteral("copied ✓"));
-        QTimer::singleShot(1200, this, [this] { m_sha->setText(m_id.left(7)); });
-    });
+    ar->addWidget(shaChip(m_authorRow));
     v->addWidget(m_authorRow);
 
     m_committer = label(m_content, 12, false, theme::faint);

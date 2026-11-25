@@ -755,7 +755,8 @@ void MainWindow::commitMenu(int row, const QPoint &pos) {
         menu.addAction(QStringLiteral("Edit message…"), this, &MainWindow::editMessage);
     }
     menu.addSeparator();
-    menu.addAction(QStringLiteral("Copy SHA"), this, [this, id] { m_repo->copy(id); });
+    menu.addAction(QStringLiteral("Copy short SHA"), this, [this, id] { m_repo->copy(id.left(7)); });
+    menu.addAction(QStringLiteral("Copy full SHA"), this, [this, id] { m_repo->copy(id); });
     menu.exec(pos);
 }
 
