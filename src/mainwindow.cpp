@@ -666,19 +666,23 @@ void MainWindow::startRebase(const QString &from) {
     m_center->setCurrentWidget(m_rebase);
 }
 
-// Before a partial push rebases onto a remote branch that moved on, ask.
+// Before a push rebases onto a remote branch that moved on, ask.
 void MainWindow::askBeforePull() {
-    m_repo->setAskPull([this](const QString &branch, int commits) {
-        if (qEnvironmentVariableIsSet("TOWEL_DEMO_SCRIPT")) return true; // a scripted run pulls
+    m_repo->setAskPull([this](const QString &branch, int commits, bool canForce) {
+        if (qEnvironmentVariableIsSet("TOWEL_DEMO_SCRIPT")) // a scripted run pulls, or forces with TOWEL_DEMO_FORCE
+            return qEnvironmentVariableIsSet("TOWEL_DEMO_FORCE") && canForce ? Repo::PullAnswer::Force : Repo::PullAnswer::Pull;
         QMessageBox box(QMessageBox::Question, QStringLiteral("Remote moved on"),
             QStringLiteral("%1 has %2 new commit%3 this branch doesn't have.").arg(branch).arg(commits).arg(commits == 1 ? QString() : QStringLiteral("s")),
             QMessageBox::Cancel, this);
         box.setInformativeText(QStringLiteral("Pull them first, moving your unpushed commits on top, then push?"));
         QPushButton *pull = box.addButton(QStringLiteral("Pull, then push"), QMessageBox::AcceptRole);
+        QPushButton *force = canForce ? box.addButton(QStringLiteral("Overwrite remote (force)"), QMessageBox::DestructiveRole) : 0;
+        if (force) force->setToolTip(QStringLiteral("For when you rewrote commits you had already pushed. Their %1 new commits are dropped from %2.").arg(commits).arg(branch));
         box.setDefaultButton(pull);
         box.exec();
+        if (box.clickedButton() == pull) return Repo::PullAnswer::Pull;
 
-        return box.clickedButton() == pull;
+        return force && box.clickedButton() == force ? Repo::PullAnswer::Force : Repo::PullAnswer::Cancel;
     });
 }
 

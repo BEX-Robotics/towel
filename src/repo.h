@@ -63,7 +63,10 @@ public:
     void fetchQuietly();
 
     // asked before a partial push rebases onto a remote branch that moved on; false cancels
-    void setAskPull(std::function<bool(const QString &remoteBranch, int commits)> ask) { m_askPull = std::move(ask); }
+    enum class PullAnswer { Cancel, Pull, Force };
+
+    // canForce: the whole branch is being pushed, so overwriting the remote is an option
+    void setAskPull(std::function<PullAnswer(const QString &remoteBranch, int commits, bool canForce)> ask) { m_askPull = std::move(ask); }
     void dismissOp();
 
     // any other git command, shown in the status strip; refreshes afterwards
@@ -159,7 +162,7 @@ private:
     QTimer *m_watchDebounce = 0;
     CommitModel m_commits;
     DiffDoc m_diff = {};
-    std::function<bool(const QString &, int)> m_askPull;
+    std::function<PullAnswer(const QString &, int, bool)> m_askPull;
     std::function<void()> m_afterFetch; // a git command clicked during a background fetch
     bool m_bgFetching = false;
     QString m_path, m_name, m_head, m_upstream, m_fingerprint, m_branch;
